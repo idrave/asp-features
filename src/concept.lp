@@ -42,13 +42,15 @@ valid(neg(C)) :- cbasic(C), belong(_, neg(C), _).
 
 is_and(and(C1, C2)) :- conc(and(C1, C2)).
 
-valid_and(C1, C2) :- conc(C1), cost(C1, N1), conc(C2), cost(C2, N2), N1 + N2 < k, not is_and(C1),
-                    not is_and(C2), C1 < C2.
+valid_and(C1, C2) :-    conc(C1), conc(C2), not is_and(C1), not is_and(C2),
+                        cost(C1, N1), cost(C2, N2), N1 + N2 < k, C1 < C2.
 
-valid_and(C1, and(C2, C3)) :- conc(C1), cost(C1, N1), conc(and(C2, C3)), cost(and(C2, C3), N2),
-                    N1 + N2 < k, not is_and(C1), C1 < C2.
+valid_and(C1, and(C2, C3)) :-   conc(C1), conc(and(C2, C3)), not is_and(C1),
+                                cost(C1, N1), cost(and(C2, C3), N2), N1 + N2 < k, C1 < C2.
 
-belong(X, and(C1, C2), S) :- const(X), valid_and(C1, C2), state(S), belong(X, C1, S), belong(X, C2, S).
+belong(X, and(C1, C2), S) :-    const(X), valid_and(C1, C2), state(S),
+                                belong(X, C1, S), belong(X, C2, S).
+
 valid(and(C1, C2)) :- belong(_, and(C1, C2), _).
 cost(and(C1, C2), N1 + N2 + 1) :- valid(and(C1, C2)), cost(C1, N1), cost(C2, N2).
 
@@ -69,32 +71,55 @@ role(tran(R)) :- belong(_, tran(R), _).
 
 cost(tran(R), 1) :- belong(_, tran(R), _).
 
+% Define concepts of the form R = R' for roles R and R'
+
+belong(X, -eq(R1, R2), S) :- const(X), role(R1), role(R2), state(S),
+                            belong((X, Y), R1, S), not belong((X, Y), R2, S),
+                            cost(R1, N1), cost(R2, N2), N1 + N2 < k.
+
+belong(X, -eq(R1, R2), S) :- const(X), role(R1), role(R2), state(S),
+                            not belong((X, Y), R1, S), belong((X, Y), R2, S),
+                            cost(R1, N1), cost(R2, N2), N1 + N2 < k.
+
+belong(X, eq(R1, R2), S) :- const(X), role(R1), role(R2), state(S),
+                            not belong(X, -eq(R1, R2), S),
+                            cost(R1, N1), cost(R2, N2), N1 + N2 < k.
+
+valid(eq(R1, R2)) :- role(R1), role(R2), belong(_, eq(R1, R2), _).
+cost(eq(R1, R2), N1 + N2 + 1) :- valid(eq(R1, R2)), cost(R1, N1), cost(R2, N2).
+
 %Define existential and universal restrictions on role-concept pairs
 
 %role_conc: equivalent to R:C notation:
 belong((X, Y), role_conc(R, C), S) :- role(R), conc(C), belong((X, Y), R, S), belong(Y, C, S).
-belong((X, Y), neg(role_conc(R, C)), S) :- const(X), const(Y), role(R), conc(C), state(S),
+belong((X, Y), -role_conc(R, C), S) :-  const(X), const(Y), role(R), conc(C), state(S),
                                         not belong((X, Y), role_conc(R, C), S).
 
-%Negation of universal quantifier as existential quantifier of the negation:
-belong(X, neg(uni(R, C)), S) :- conc(C), belong((X, Y), neg(role_conc(R, C)), S), cost(R, NR), cost(C, NC), NR + NC < k.
+%Negation of universal quantifier as existence of the negation:
+belong(X, -uni(R, C), S) :- belong((X, Y), -role_conc(R, C), S), 
+                            cost(R, NR), cost(C, NC), NR + NC < k.
 
-belong(X, uni(R, C), S) :- const(X), role(R), conc(C), state(S), not belong(X, neg(uni(R, C)), S),
+belong(X, uni(R, C), S) :-  const(X), role(R), conc(C), state(S),
+                            not belong(X, -uni(R, C), S),
                             cost(R, NR), cost(C, NC), NR + NC < k.
 
 cost(uni(R, C), NR + NC + 1) :- valid(uni(R, C)), cost(R, NR), cost(C, NC).
 valid(uni(R, C)) :- role(R), conc(C), belong(_, uni(R, C), _).
 
 %Existential restriction:
-belong(X, exi(R, C), S) :- belong((X, Y), role_conc(R, C), S), cost(R, NR), cost(C, NC), NR + NC < k.
+belong(X, exi(R, C), S) :-  belong((X, Y), role_conc(R, C), S),
+                            cost(R, NR), cost(C, NC), NR + NC < k.
 
 cost(exi(R, C), NR + NC + 1) :- valid(exi(R, C)), cost(R, NR), cost(C, NC).
 valid(exi(R, C)) :- role(R), conc(C), belong(_, exi(R, C), _).
 
 % Guarantee non-redundancy in the set of concepts
 
-differ(C1, C2) :- valid(C1), valid(C2), const(X), state(S), belong(X, C1, S), not belong(X, C2, S).
-differ(C1, C2) :- valid(C1), valid(C2), const(X), state(S), not belong(X, C1, S), belong(X, C2, S).
+differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
+                    belong(X, C1, S), not belong(X, C2, S).
+        
+differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
+                    not belong(X, C1, S), belong(X, C2, S).
 
 equiv(C1, C2) :- valid(C1), valid(C2), not differ(C1, C2).
 
