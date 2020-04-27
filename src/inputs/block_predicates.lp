@@ -10,8 +10,7 @@ const(c).
 const(floor).
 
 state(state0).
-hold(state0, clear, c).
 hold(state0, clear, a).
 hold(state0, on, (a, b)).
-hold(state0, on, (b, floor)).
+hold(state0, on, (b, c)).
 hold(state0, on, (c, floor)).
