@@ -15,44 +15,49 @@ role(R)             Expression R represents a role.
 *%
 
 %Upper bound in concept and role complexity
-#const k=5.
+#const k = 2.
+#program step(i).
 
 %Rule for primitive concepts from unary predicates
-belong(X, prim(P), S) :- const(X), pred(P), arity(P, 1), state(S), hold(S, P, X).
-cost(prim(P), 1) :- belong(_, prim(P), _).
+exp(prim(P), i) :- pred(P), i = 1.
+belong(X, prim(P), S) :- const(X), exp(prim(P), i), arity(P, 1), state(S), hold(S, P, X).
+cost(prim(P), 1) :- exp(prim(P), i).
 
 %Rule for universal concept
 belong(X, univ, S) :- const(X), state(S).
-cost(univ, 1).
+cost(univ, 1) :- exp(univ, i).
+exp(univ, i) :- i = 1.
 
 %Rule for nominals
-belong(X, nomi(X), S) :- const(X), state(S).
-cost(nomi(X), 1) :- belong(_, nomi(X), _).
+belong(X, nomi(X), S) :- const(X), exp(nomi(X), i), state(S).
+cost(nomi(X), 1) :- exp(nomi(X), i).
+exp(nomi(X), i) :- const(X), i = 1.
 
-cbasic(C) :- C = (prim(_); univ; nomi(_)), cost(C, _).
-valid(C) :- cbasic(C).
+cbasic(C) :- C = (prim(_); univ; nomi(_)), exp(C, _).
+%valid(C) :- cbasic(C).
 
 %Negation
 
-belong(X, neg(C), S) :- const(X), cbasic(C), state(S), not belong(X, C, S).
-cost(neg(C), 2) :- valid(neg(C)).
-valid(neg(C)) :- cbasic(C), belong(_, neg(C), _).
+belong(X, neg(C), S) :- const(X), exp(neg(C), i), state(S), not belong(X, C, S).
+cost(neg(C), 2) :- exp(neg(C), i).
+%valid(neg(C)) :- cbasic(C), belong(_, neg(C), _).
+exp(neg(C), i) :- cbasic(C), i = 2.
 
 %Rule for conjunction
 
-is_and(and(C1, C2)) :- conc(and(C1, C2)).
+is_and(and(C1, C2)) :- conc(and(C1, C2), _).
 
-valid_and(C1, C2) :-    conc(C1), conc(C2), not is_and(C1), not is_and(C2),
-                        cost(C1, N1), cost(C2, N2), N1 + N2 < k, C1 < C2.
+exp(and(C1, C2), i) :-    conc(C1, N1), conc(C2, N2), not is_and(C1), not is_and(C2),
+                        N1 + N2 < k, C1 < C2, 1 {N1 = i-1; N2=i-1}.
 
-valid_and(C1, and(C2, C3)) :-   conc(C1), conc(and(C2, C3)), not is_and(C1),
-                                cost(C1, N1), cost(and(C2, C3), N2), N1 + N2 < k, C1 < C2.
+exp(and(C1, and(C2, C3)), i) :-    conc(C1, N1), conc(and(C2, C3), N2), not is_and(C1), N1 + N2 < k,
+                                C1 < C2, 1 {N1 = i-1; N2=i-1}.
 
-belong(X, and(C1, C2), S) :-    const(X), valid_and(C1, C2), state(S),
+belong(X, and(C1, C2), S) :-    const(X), exp(and(C1, C2), i), state(S),
                                 belong(X, C1, S), belong(X, C2, S).
 
-valid(and(C1, C2)) :- belong(_, and(C1, C2), _).
-cost(and(C1, C2), N1 + N2 + 1) :- valid(and(C1, C2)), cost(C1, N1), cost(C2, N2).
+%valid(and(C1, C2)) :- belong(_, and(C1, C2), _).
+cost(and(C1, C2), N1 + N2 + 1) :- exp(and(C1, C2), i), cost(C1, N1), cost(C2, N2).
 
 %Primitive roles and their inverse
 
@@ -85,53 +90,56 @@ belong(X, eq(R1, R2), S) :- const(X), role(R1), role(R2), state(S),
                             not belong(X, -eq(R1, R2), S),
                             cost(R1, N1), cost(R2, N2), N1 + N2 < k.
 
-valid(eq(R1, R2)) :- role(R1), role(R2), belong(_, eq(R1, R2), _).
-cost(eq(R1, R2), N1 + N2 + 1) :- valid(eq(R1, R2)), cost(R1, N1), cost(R2, N2).
+%valid(eq(R1, R2)) :- role(R1), role(R2), belong(_, eq(R1, R2), _).
+exp(eq(R1, R2), i) :- role(R1), role(R2), i = 2.
+cost(eq(R1, R2), N1 + N2 + 1) :- exp(eq(R1, R2), i), cost(R1, N1), cost(R2, N2).
 
 %Define existential and universal restrictions on role-concept pairs
 
 %role_conc: equivalent to R:C notation:
-belong((X, Y), role_conc(R, C), S) :- role(R), conc(C), belong((X, Y), R, S), belong(Y, C, S).
-belong((X, Y), -role_conc(R, C), S) :-  const(X), const(Y), role(R), conc(C), state(S),
+belong((X, Y), role_conc(R, C), S) :- role(R), conc(C, i-1), belong((X, Y), R, S), belong(Y, C, S).
+belong((X, Y), -role_conc(R, C), S) :-  const(X), const(Y), role(R), conc(C, i-1), state(S),
                                         not belong((X, Y), role_conc(R, C), S).
 
 %Negation of universal quantifier as existence of the negation:
-belong(X, -uni(R, C), S) :- belong((X, Y), -role_conc(R, C), S), 
+belong(X, -uni(R, C), S) :- exp(uni(R, C), i), belong((X, Y), -role_conc(R, C), S), 
                             cost(R, NR), cost(C, NC), NR + NC < k.
 
-belong(X, uni(R, C), S) :-  const(X), role(R), conc(C), state(S),
+belong(X, uni(R, C), S) :-  const(X), exp(uni(R, C), i), state(S),
                             not belong(X, -uni(R, C), S),
                             cost(R, NR), cost(C, NC), NR + NC < k.
 
-cost(uni(R, C), NR + NC + 1) :- valid(uni(R, C)), cost(R, NR), cost(C, NC).
-valid(uni(R, C)) :- role(R), conc(C), belong(_, uni(R, C), _).
+exp(uni(R, C), i) :- role(R), conc(C, i-1).
+cost(uni(R, C), NR + NC + 1) :- exp(uni(R, C), i), cost(R, NR), cost(C, NC).
+%valid(uni(R, C)) :- role(R), conc(C), belong(_, uni(R, C), _).
 
 %Existential restriction:
-belong(X, exi(R, C), S) :-  belong((X, Y), role_conc(R, C), S),
+belong(X, exi(R, C), S) :-  exp(exi(R, C), i), belong((X, Y), role_conc(R, C), S),
                             cost(R, NR), cost(C, NC), NR + NC < k.
 
-cost(exi(R, C), NR + NC + 1) :- valid(exi(R, C)), cost(R, NR), cost(C, NC).
-valid(exi(R, C)) :- role(R), conc(C), belong(_, exi(R, C), _).
+exp(exi(R, C), i) :- role(R), conc(C, i-1).
+cost(exi(R, C), NR + NC + 1) :- exp(exi(R, C), i), cost(R, NR), cost(C, NC).
+%valid(exi(R, C)) :- role(R), conc(C), belong(_, exi(R, C), _).
 
 % Guarantee non-redundancy in the set of concepts
 
-differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
-                    belong(X, C1, S), not belong(X, C2, S).
+%differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
+%                    belong(X, C1, S), not belong(X, C2, S).
         
-differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
-                    not belong(X, C1, S), belong(X, C2, S).
+%differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
+%                    not belong(X, C1, S), belong(X, C2, S).
 
-equiv(C1, C2) :- valid(C1), valid(C2), not differ(C1, C2).
+%equiv(C1, C2) :- valid(C1), valid(C2), not differ(C1, C2).
 
 %From the sets of equivalent valid concepts, we take the one with least cost
 %that appears before in clingo's total order
-before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 < N2.
-before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 = N2, C1 < C2.
+%before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 < N2.
+%before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 = N2, C1 < C2.
 
 %An expression is redundant if there is another expression with the same connotation in all states
 %and such expression is already in the set of concepts, appearing before over the order we defined
-redundant(C1) :- conc(C2), equiv(C1, C2), before(C2, C1).
+%redundant(C1) :- conc(C2), equiv(C1, C2), before(C2, C1).
 
 %If an expression is valid and not redundant, we include it over the set of unique concepts
-conc(C) :- valid(C), not redundant(C).
-#show conc/1.
+%conc(C) :- valid(C), not redundant(C).
+%#show conc/1.
