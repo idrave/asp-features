@@ -8,15 +8,15 @@ cost(pred(P), 0) :- bool(pred(P)).
 
 hasValue(pred(P), true, S) :- bool(pred(P)), state(S), hold(S, P).
 
-cardinality(conc(C), N, S) :- conc(C, _), state(S), N = #count{X : belong(X, C, S)}.
+%cardinality(conc(C), N, S) :- conc(C, _), state(S), N = #count{X : belong(X, C, S)}.
 
-num(conc(C)) :- cardinality(conc(C), N, S), N > 1, conc(C, M).
-bool(conc(C)) :- conc(C, _), not num(conc(C), M).
+num(conc(C)) :- cardinality(C, N, S), N > 1, conc(C, _).
+bool(conc(C)) :- conc(C, _), not num(conc(C)).
 
 cost(conc(C), N) :- conc(C, N), feature(conc(C)).
 
 hasValue(conc(C), true, S) :- bool(conc(C)), const(X), state(S), belong(X, C, S).
-hasValue(conc(C), N, S) :- num(conc(C)), cardinality(conc(C), N, S).
+hasValue(conc(C), N, S) :- num(conc(C)), cardinality(C, N, S).
 
 num(dist(C1, R, C, C2)) :- conc(C1, M), role(R), cost(R, N), conc(C, O), conc(C2, P),
                             M+N+O+P <= k.
