@@ -16,12 +16,6 @@ candidate(C, i) :- new(C, i), not redundant(C, i).
 
 compare(C1, C2) :- exp(C1, i), conc(C2, j), j < i.
 compare(C1, C2) :- new(C1, i), new(C2, i).
-%
-%differ(C1, C2) :-   compare(C1, C2), const(X), state(S),
-%                    belong(X, C1, S), not belong(X, C2, S).
-        
-%differ(C1, C2) :-   compare(C1, C2), const(X), state(S),
-%                    not belong(X, C1, S), belong(X, C2, S).
 
 cardinality(C, N, S) :- exp(C, i), state(S), N = #count{X : belong(X, C, S)}.
 equiv(C1, C2) :- compare(C1, C2), not differ(C1, C2).

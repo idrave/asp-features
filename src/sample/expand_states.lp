@@ -1,0 +1,97 @@
+#show state/2.
+#program expand(depth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Establish initial state
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+state(initialState, depth) :- depth = 0.
+holds(Variable, Value, initialState) :- initialState(Variable, Value), state(initialState, depth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Compute derived predicates
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% conjunctive preconditions
+satisfied(DerivedPredicate, type(and), S) :- derivedPredicate(DerivedPredicate, type(and)), holds(Variable, Value, S) : precondition(DerivedPredicate, type(and), Variable, Value); state(S, depth).
+
+% disjunctive preconditions
+satisfied(DerivedPredicate, type(or), S) :- precondition(DerivedPredicate, type(or), Variable, Value), holds(Variable, Value, S), state(S, depth).
+
+holds(DerivedVariable, Value, S) :- satisfied(DerivedPredicate, Type, S), postcondition(DerivedPredicate, Type, effect(unconditional), DerivedVariable, Value), state(S, depth).
+
+holds(derivedVariable(DerivedVariable), value(DerivedVariable, false), S) :- derivedVariable(DerivedVariable), not holds(derivedVariable(DerivedVariable), value(DerivedVariable, true), S), state(S, depth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Perform actions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%1 {occurs(Action, T) : action(Action)} 1 :- time(T), T > 0.
+
+% Check preconditions
+%:- occurs(Action, T), precondition(Action, Variable, Value), not holds(Variable, Value, T - 1).
+
+% Apply effects
+
+caused(Variable, Value, apply(Action, State)) :-
+	validAction(Action, State, depth),
+	postcondition(Action, Effect, Variable, Value),
+	holds(VariablePre, ValuePre, State) : precondition(Effect, VariablePre, ValuePre).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Inertia rules
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+modified(Variable, State) :- caused(Variable, Value, State), expanded(State, depth).
+
+holds(Variable, Value, apply(Action, State)) :- caused(Variable, Value, apply(Action, State)).
+
+holds(variable(V), Value, apply(Action, State)) :- 
+    holds(variable(V), Value, State), not modified(variable(V), apply(Action, State)),
+    validAction(Action, State, depth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Variables and mutex groups
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Check that variables have unique values
+%:- variable(Variable), not 1 {holds(Variable, Value, S) : contains(Variable, Value)} 1, expanded(S, depth).
+
+% Check mutexes
+%:- mutexGroup(MutexGroup), not {holds(Variable, Value, S) : contains(MutexGroup, Variable, Value)} 1, expanded(S, depth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Verify that goal is met
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+goal(State) :- expanded(State, depth), holds(Variable, Value, State) : goal(Variable, Value).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+validAction(Action, State, depth) :-
+    state(State, depth-1), action(Action),
+    holds(Variable, Value, State) : precondition(Action, Variable, Value).
+
+expanded(apply(Action, State), depth) :- validAction(Action, State, depth).
+
+#program prune(depth).
+compare(Exp, State, depth) :- expanded(Exp, depth), state(State, E), before(E).
+compare(New1, New2, depth) :- newState(New1, depth), newState(New2, depth).
+
+different(S1, S2) :-
+    compare(S1, S2, depth), holds(variable(V), Value1, S1), not holds(variable(V), Value1, S2).
+
+before(0..depth-1).
+
+newState(State, depth) :-
+    expanded(State, depth),
+    different(State, S) : state(S, D), before(D).
+
+state(State, depth) :- newState(State, depth),
+    different(State, S) : newState(S, depth), S < State.
+
+goalState(State) :- goal(State), state(State, depth).
+
+transition(State, Other) :-
+    state(State, depth-1), validAction(Action, State, depth), state(Other, _),
+    compare(apply(Action, State), Other, depth), not different(apply(Action, State), Other).
