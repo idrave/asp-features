@@ -9,6 +9,7 @@
 %cost(F, N)             Feature F has cost N
 
 %A state is relevant if it is part of a relevant transition
+#program sat.
 relevant(S) :- relevant(S, _).
 relevant(S) :- relevant(_, S).
 

@@ -26,11 +26,6 @@ holds(derivedVariable(DerivedVariable), value(DerivedVariable, false), S) :- der
 % Perform actions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%1 {occurs(Action, T) : action(Action)} 1 :- time(T), T > 0.
-
-% Check preconditions
-%:- occurs(Action, T), precondition(Action, Variable, Value), not holds(Variable, Value, T - 1).
-
 % Apply effects
 
 caused(Variable, Value, apply(Action, State)) :-
@@ -55,10 +50,10 @@ holds(variable(V), Value, apply(Action, State)) :-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Check that variables have unique values
-%:- variable(Variable), not 1 {holds(Variable, Value, S) : contains(Variable, Value)} 1, expanded(S, depth).
+:- variable(Variable), not 1 {holds(Variable, Value, S) : contains(Variable, Value)} 1, expanded(S, depth).
 
 % Check mutexes
-%:- mutexGroup(MutexGroup), not {holds(Variable, Value, S) : contains(MutexGroup, Variable, Value)} 1, expanded(S, depth).
+:- mutexGroup(MutexGroup), not {holds(Variable, Value, S) : contains(MutexGroup, Variable, Value)} 1, expanded(S, depth).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Verify that goal is met
@@ -91,6 +86,7 @@ state(State, depth) :- newState(State, depth),
     different(State, S) : newState(S, depth), S < State.
 
 goalState(State) :- goal(State), state(State, depth).
+holdsState(Variable, Value, State) :- holds(Variable, Value, State), state(State, depth).
 
 transition(State, Other) :-
     state(State, depth-1), validAction(Action, State, depth), state(Other, _),

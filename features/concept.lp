@@ -109,9 +109,10 @@ belong(X, uni(R, C), S) :-  const(X), exp(uni(R, C), i), state(S),
                             not belong(X, -uni(R, C), S),
                             cost(R, NR), cost(C, NC), NR + NC < k.
 
+
+
 exp(uni(R, C), i) :- role(R), conc(C, i-1).
 cost(uni(R, C), NR + NC + 1) :- exp(uni(R, C), i), cost(R, NR), cost(C, NC).
-%valid(uni(R, C)) :- role(R), conc(C), belong(_, uni(R, C), _).
 
 %Existential restriction:
 belong(X, exi(R, C), S) :-  exp(exi(R, C), i), belong((X, Y), role_conc(R, C), S),
@@ -119,27 +120,3 @@ belong(X, exi(R, C), S) :-  exp(exi(R, C), i), belong((X, Y), role_conc(R, C), S
 
 exp(exi(R, C), i) :- role(R), conc(C, i-1).
 cost(exi(R, C), NR + NC + 1) :- exp(exi(R, C), i), cost(R, NR), cost(C, NC).
-%valid(exi(R, C)) :- role(R), conc(C), belong(_, exi(R, C), _).
-
-% Guarantee non-redundancy in the set of concepts
-
-%differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
-%                    belong(X, C1, S), not belong(X, C2, S).
-        
-%differ(C1, C2) :-   valid(C1), valid(C2), const(X), state(S),
-%                    not belong(X, C1, S), belong(X, C2, S).
-
-%equiv(C1, C2) :- valid(C1), valid(C2), not differ(C1, C2).
-
-%From the sets of equivalent valid concepts, we take the one with least cost
-%that appears before in clingo's total order
-%before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 < N2.
-%before(C1, C2) :- cost(C1, N1), cost(C2, N2), N1 = N2, C1 < C2.
-
-%An expression is redundant if there is another expression with the same connotation in all states
-%and such expression is already in the set of concepts, appearing before over the order we defined
-%redundant(C1) :- conc(C2), equiv(C1, C2), before(C2, C1).
-
-%If an expression is valid and not redundant, we include it over the set of unique concepts
-%conc(C) :- valid(C), not redundant(C).
-%#show conc/1.
