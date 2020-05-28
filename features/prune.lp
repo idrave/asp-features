@@ -1,9 +1,6 @@
 #program reduce(i).
 
-nonempty(C) :- exp(C, i), belong(_, C, _).
--new(C, i) :- exp(C, i), not nonempty(C).
--new(C, i) :- exp(C, i), conc(D, j), j < i, equiv(C, D).
-new(C, i) :- exp(C, i), not -new(C, i).
+new(C, i) :- exp(C, i), belong(_, C, _), differ(C, CC) : conc(CC, j), j < i.
 new(C, i) :- candidate(C, i-1).
 %candidate(C, i) :- candidate(C, i-1), not conc(C, i-1).
 
@@ -21,3 +18,16 @@ cardinality(C, N, S) :- exp(C, i), state(S), N = #count{X : belong(X, C, S)}.
 equiv(C1, C2) :- compare(C1, C2), not differ(C1, C2).
 
 conc(C, i) :- candidate(C, i), cost(C, i).
+
+#program relevant(i).
+keep__(conc(C, N)) :- conc(C, N).
+keep__(candidate(C, i)) :- candidate(C, i).
+keep__(role(R)) :- role(R).
+keep__(cost(C, N)) :- conc(C, _), cost(C, N).
+keep__(cost(C, N)) :- candidate(C, i), cost(C, N).
+keep__(cost(R, N)) :- role(R), cost(R, N).
+keep__(belong(X, C, S)) :- belong(X, C, S), conc(C, _).
+keep__(belong(X, C, S)) :- belong(X, C, S), candidate(C, i).
+keep__(belong(X, R, S)) :- belong(X, R, S), role(R).
+keep__(cardinality(C, N, S)) :- cardinality(C, N, S), candidate(C, i).
+keep__(cardinality(C, N, S)) :- cardinality(C, N, S), conc(C, _).

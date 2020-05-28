@@ -4,3 +4,6 @@
 /.vscode
 /.idea
 /res
+/ola.txt
+__pycache__
+/build

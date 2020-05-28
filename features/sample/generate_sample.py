@@ -2,7 +2,7 @@
 import clingo
 import sys
 from features.model_util import to_model_list, ModelUtil
-from get_encoding import apply_encoding
+from features.sample.get_encoding import apply_encoding
 
 relevant_simple = ['has','variable','initialState','constant','goalState','state','holdsState','transition']        
 
@@ -21,7 +21,7 @@ def onmodel(m: clingo.Model):
 
     print("States: {}, Transitions: {}".format(count_state, count_transition))
 
-path = "/home/ivan/Documents/ai/features/src/sample"
+path = "/home/ivan/Documents/ai/features/features/sample"
 
 problem = sys.argv[1]
 output_path = sys.argv[2]
@@ -34,7 +34,7 @@ prg.load(problem)
 prg.ground( [("base", [])] )
 
 print("Expand until: {}".format(h))
-plasp_model = None
+plasp_symbols = None
 
 for i in range(h+1):
     prg.ground([("expand", [i])])
@@ -52,5 +52,5 @@ for i in range(h+1):
             plasp_symbols = ModelUtil(model.symbols(atoms=True)).get_symbols(relevant_plasp)
     prg.cleanup()
 
-final_symbols = ModelUtil(apply_encoding(plasp_model)).get_symbols(relevant_clingo)
+final_symbols = ModelUtil(apply_encoding(plasp_symbols)).get_symbols(relevant_clingo)
 ModelUtil(final_symbols).write(output_path)

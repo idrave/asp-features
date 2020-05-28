@@ -1,4 +1,5 @@
 import clingo
+from features.model_util import ModelUtil
 import sys
 
 def extract_null(m: clingo.Model):
@@ -14,8 +15,8 @@ def extract_null(m: clingo.Model):
 
 def apply_encoding(atoms, display=False):
     ctl = clingo.Control()
-    ctl.add("base", [], atoms)
-    ctl.load("/home/ivan/Documents/ai/features/src/sample/encoding.lp")
+    ctl.add("base", [], str(ModelUtil(atoms)))
+    ctl.load("/home/ivan/Documents/ai/features/features/sample/encoding.lp")
     ctl.ground([("base", [])])
     nulls = []
     with ctl.solve(yield_=True) as models:
