@@ -1,14 +1,18 @@
 import clingo
 from features.model_util import ModelUtil, to_model_list, filter_symbols
 import sys
-
+import time
 k = int(sys.argv[3])
 output_path = sys.argv[2]
 sample = sys.argv[1]
+#prunning = sys.argv[4]
+
+#pruneTypes = {"fast" : "fast_equiv"}
 
 path = "/home/ivan/Documents/ai/features/features/"
 
 print("Expand until: {}".format(k))
+start = time.time()
 symbols = []
 for i in range(1, k+1):
     prg = clingo.Control()
@@ -20,7 +24,7 @@ for i in range(1, k+1):
     prg.add("base", [], "#const maxcost = {}.".format(k))
 
     prg.ground( [("base", [])] )
-    prg.ground( [("step", [i]),("fast_equiv", []),("reduce", [i])] )
+    prg.ground( [("step", [i]),("standard_equiv", []),("reduce", [i])] )
 
     with prg.solve(yield_=True) as models:
         models = to_model_list(models)
@@ -37,3 +41,5 @@ for i in range(1, k+1):
     del(prg)
     if i == k:
         ModelUtil(symbols).write(output_path)
+
+print("Took {}s".format(time.time() - start))

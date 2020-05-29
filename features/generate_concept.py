@@ -16,7 +16,7 @@ prg.add("base", [], "#const maxcost = {}.".format(k))
 prg.ground( [("base", [])] )
 print("Expand until: {}".format(k))
 for i in range(1, k+1):
-    prg.ground( [("step", [i]),("fast_equiv", []),("reduce", [i])] )
+    prg.ground( [("step", [i]),("standard_equiv", []),("reduce", [i])] )
     with prg.solve(yield_=True) as models:
         models = to_model_list(models)
         if len(models) == 0:
