@@ -18,26 +18,26 @@ role(R)             Expression R represents a role.
 #program step(i).
 
 %Rule for primitive concepts from unary predicates
-exp(prim(P), i) :- pred(P), i = 1, 1 < maxcost.
+exp(prim(P), i) :- pred(P), i = 1, 1 <= maxcost.
 belong(X, prim(P), S) :- const(X), exp(prim(P), i), arity(P, 1), state(S), hold(S, P, X).
 cost(prim(P), 1) :- exp(prim(P), i).
 
 %Rule for universal concept
 belong(X, univ, S) :- const(X), state(S).
 cost(univ, 1) :- exp(univ, i).
-exp(univ, i) :- i = 1, 1 < maxcost.
+exp(univ, i) :- i = 1, 1 <= maxcost.
 
 %Rule for nominals
 belong(X, nomi(X), S) :- const(X), exp(nomi(X), i), state(S).
 cost(nomi(X), 1) :- exp(nomi(X), i).
-exp(nomi(X), i) :- const(X), i = 1, 1 < maxcost.
+exp(nomi(X), i) :- const(X), i = 1, 1 <= maxcost.
 
 %Negation
 
 belong(X, neg(C), S) :- const(X), exp(neg(C), i), state(S), not belong(X, C, S).
 cost(neg(C), 2) :- exp(neg(C), i).
 %valid(neg(C)) :- cbasic(C), belong(_, neg(C), _).
-exp(neg(C), i) :- conc(C, i-1), i = 2, 2 < maxcost.
+exp(neg(C), i) :- conc(C, i-1), i = 2, 2 <= maxcost.
 
 %Rule for conjunction
 

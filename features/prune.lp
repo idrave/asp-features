@@ -8,34 +8,34 @@
 cardinality(C, N, S) :- exp(C, i), state(S), N = #count{X : belong(X, C, S)}.
 non_empty(C, i) :- exp(C, i), belong(_, C, _).
 
-compare(C1, C2, i, prune_exp) :-
+compare(C1, C2, i, "prune_exp") :-
     non_empty(C1, i), conc(C2, j), j < i.
 
 #program prune_new(i).
 
-new(C, i) :- exp(C, i), differ(C, CC) : compare(C, CC, i, prune_exp).
+new(C, i) :- exp(C, i), differ(C, CC) : compare(C, CC, i, "prune_exp").
 
-compare(C1, C2, i, prune_new) :- 
+compare(C1, C2, i, "prune_new") :- 
     new(C1, i), new(C2, i), cost(C1, N1), cost(C2, N2), N2 < N1.
-compare(C1, C2, i, prune_new) :- 
+compare(C1, C2, i, "prune_new") :- 
     new(C1, i), new(C2, i), cost(C1, N1), cost(C2, N2), N2 = N1, C2 < C1.
 
 #program prune_pool(i).
 
 pool(C, i) :- new(C, i),
-    differ(C, Other) : compare(C, Other, i, prune_new).
+    differ(C, Other) : compare(C, Other, i, "prune_new").
 
 pool(C, i) :- candidate(C, i-1).
 
-compare(C1, C2, i, prune_pool) :- 
+compare(C1, C2, i, "prune_pool") :-
     pool(C1, i), pool(C2, i), cost(C1, N1), cost(C2, N2), N2 < N1.
-compare(C1, C2, i, prune_pool) :- 
+compare(C1, C2, i, "prune_pool") :- 
     pool(C1, i), pool(C2, i), cost(C1, N1), cost(C2, N2), N2 = N1, C2 < C1.
 
 #program prune_candidate(i).
 
 candidate(C, i) :- pool(C, i),
-    differ(C, Other) : compare(C, Other, i, prune_pool).
+    differ(C, Other) : compare(C, Other, i, "prune_pool").
 
 conc(C, i) :- candidate(C, i), cost(C, i).
 
