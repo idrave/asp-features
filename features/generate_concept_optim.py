@@ -2,7 +2,10 @@ import clingo
 from features.model_util import ModelUtil, to_model_list, filter_symbols
 import sys
 import time
-
+import os
+import psutil
+process = psutil.Process(os.getpid())
+print(process.memory_info().rss * 1e-6)
 def standard_prune(ctl: clingo.Control, depth, prune_round, cleanup=False, yield_=False):
     symbols = []
     ctl.ground([("standard_differ", [depth, prune_round])])
@@ -51,7 +54,7 @@ for i in range(1, k+1):
     prg.ground( [("base", []), ('step', [i])] )
     prg.solve()
     prg.cleanup()
-
+    print("Memory usage: {}".format(process.memory_info().rss * 1e-6))
     for p_round in prune_rounds:
         prg.ground([(p_round, [i])])
         prg.solve()
@@ -60,11 +63,12 @@ for i in range(1, k+1):
             symbols = optimal_prune(prg, i, p_round, yield_=yield_)
         else:
             symbols = standard_prune(prg, i, p_round, yield_=yield_)
-            
+    print("Memory usage: {}".format(process.memory_info().rss * 1e-6))       
     if len(symbols) == 0:
         raise RuntimeError("Not satisfiable!")
     elif len(symbols) > 1:
         raise RuntimeWarning("More than one model found!")
+
     symbols = symbols[0]
     model = ModelUtil(symbols)
     exp = model.count_symbol(('exp', 2))
@@ -75,6 +79,7 @@ for i in range(1, k+1):
     concepts = model.count_symbol(('conc', 2))
     print("Level {}. Exp: {}. New {}. Pool {}. Candidates {}. Concepts: {}".format(i,exp,new_,pool,candidate, concepts))
     if len(show): print(model.get_symbols(filter = show))
+    
     prg.cleanup()
     symbols = filter_symbols(prg, program="relevant", prog_args=[i])[0]
     #print(str(ModelUtil(symbols)))

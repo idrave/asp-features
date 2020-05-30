@@ -13,7 +13,7 @@ compare(C1, C2, i, "prune_exp") :-
 
 #program prune_new(i).
 
-new(C, i) :- exp(C, i), differ(C, CC) : compare(C, CC, i, "prune_exp").
+new(C, i) :- non_empty(C, i), differ(C, CC) : compare(C, CC, i, "prune_exp").
 
 compare(C1, C2, i, "prune_new") :- 
     new(C1, i), new(C2, i), cost(C1, N1), cost(C2, N2), N2 < N1.

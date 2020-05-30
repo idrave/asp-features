@@ -18,8 +18,8 @@ role(R)             Expression R represents a role.
 #program step(i).
 
 %Rule for primitive concepts from unary predicates
-exp(prim(P), i) :- pred(P), i = 1, 1 <= maxcost.
-belong(X, prim(P), S) :- const(X), exp(prim(P), i), arity(P, 1), state(S), hold(S, P, X).
+exp(prim(P), i) :- pred(P), arity(P, 1), i = 1, 1 <= maxcost.
+belong(X, prim(P), S) :- const(X), exp(prim(P), i), state(S), hold(S, P, X).
 cost(prim(P), 1) :- exp(prim(P), i).
 
 %Rule for universal concept
