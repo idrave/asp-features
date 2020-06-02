@@ -13,8 +13,6 @@ differ(C1, C2) :-
     compare(C1, C2, depth, round), const(X), state(S),    
     not belong(X, C1, S), belong(X, C2, S).
         
-%differ(C1, C2) :-   compare(C1, C2, depth, round), const(X), state(S),
-%                    not belong(X, C1, S), belong(X, C2, S).
 
 #program optimal_differ_start(depth, round).
 differ_card(C1, C2, depth, round) :- 

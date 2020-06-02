@@ -14,87 +14,120 @@ role(R)             Expression R represents a role.
 
 *%
 
-%Upper bound in concept and role complexity
-#program step(i).
+%*
+Load sample and logic
+Generate batch of expressions
+Prune internally any repeated expressions
+Prune with concepts from last rounds
+Prune with the current pool of expressions
+Add all unique expressions to the new pool
+Only keep information about concepts / pool (discard the rest)
+Repeat until all k-th depth have been generated
+Add k-th depth concepts
+Repeat for each depth level incrementally
+Identifying batches:
+    depth
+    generation:
+        require no expression
+        require one expression
+        require two expressions
+            2 concepts
+            2 roles
+            1 concept and 1 role
+    subbatch id:
+        divide existing concepts into shards and generate from each shard/couple of shards separately
+*%
+
+#program primitive(depth).
 
 %Rule for primitive concepts from unary predicates
-exp(prim(P), i) :- pred(P), arity(P, 1), i = 1, 1 <= maxcost.
-belong(X, prim(P), S) :- const(X), exp(prim(P), i), state(S), hold(S, P, X).
-cost(prim(P), 1) :- exp(prim(P), i).
+exp(prim(P), depth) :- pred(P), arity(P, 1), depth = 1.
+belong(X, prim(P), S) :- const(X), exp(prim(P), depth), state(S), hold(S, P, X).
 
 %Rule for universal concept
-belong(X, univ, S) :- const(X), state(S).
-cost(univ, 1) :- exp(univ, i).
-exp(univ, i) :- i = 1, 1 <= maxcost.
+belong(X, univ, S) :- const(X), state(S), exp(univ, depth).
+exp(univ, depth) :- depth = 1.
 
 %Rule for nominals
-belong(X, nomi(X), S) :- const(X), exp(nomi(X), i), state(S).
-cost(nomi(X), 1) :- exp(nomi(X), i).
-exp(nomi(X), i) :- const(X), i = 1, 1 <= maxcost.
+belong(X, nomi(X), S) :- const(X), exp(nomi(X), depth), state(S).
+exp(nomi(X), depth) :- const(X), depth = 1.
+
+#program negation(depth).
 
 %Negation
+belong(X, neg(C), S) :- const(X), exp(neg(C), depth), state(S), not belong(X, C, S).
+exp(neg(C), depth) :- conc(C, depth-1), depth = 2.
 
-belong(X, neg(C), S) :- const(X), exp(neg(C), i), state(S), not belong(X, C, S).
-cost(neg(C), 2) :- exp(neg(C), i).
-%valid(neg(C)) :- cbasic(C), belong(_, neg(C), _).
-exp(neg(C), i) :- conc(C, i-1), i = 2, 2 <= maxcost.
+%Upper bound in concept and role complexity
+#program conjunction(depth, input1, input2).
+
+:- not depth = input1 + input2 + 1.
 
 %Rule for conjunction
 
 is_and(and(C1, C2)) :- conc(and(C1, C2), _).
 
-exp(and(C1, C2), i) :-    conc(C1, N1), conc(C2, N2), not is_and(C1), not is_and(C2),
-                        N1 + N2 < maxcost, C1 < C2, 1 {N1 = i-1; N2=i-1}.
+exp(and(C1, C2), depth) :-
+    conc(C1, input1), conc(C2, input2),
+    not is_and(C1), not is_and(C2), C1 < C2.
 
-exp(and(C1, and(C2, C3)), i) :-
-    conc(C1, N1), conc(and(C2, C3), N2), not is_and(C1), N1 + N2 < maxcost,
-    C1 < C2, 1 {N1 = i-1; N2=i-1}.
+exp(and(C1, and(C2, C3)), depth) :-
+    conc(C1, input1), conc(and(C2, C3), input2),
+    not is_and(C1), C1 < C2.
 
-belong(X, and(C1, C2), S) :-    const(X), exp(and(C1, C2), i), state(S),
-                                belong(X, C1, S), belong(X, C2, S).
+belong(X, and(C1, C2), S) :-    
+    const(X), exp(and(C1, C2), depth), state(S),
+    belong(X, C1, S), belong(X, C2, S).
 
-%valid(and(C1, C2)) :- belong(_, and(C1, C2), _).
-cost(and(C1, C2), N1 + N2 + 1) :- exp(and(C1, C2), i), cost(C1, N1), cost(C2, N2).
+#program roles.
 
 %Primitive roles and their inverse
 
-belong((X, Y), r_prim(P), S) :- i = 1, const(X), const(Y), pred(P), arity(P, 2), state(S), hold(S, P, (X, Y)).
-belong((X, Y), inv(r_prim(P)), S) :- i = 1, const(X), const(Y), pred(P), arity(P, 2), state(S), hold(S, P, (Y, X)).
+belong((X, Y), r_prim(P), S) :- const(X), const(Y), pred(P), arity(P, 2), state(S), hold(S, P, (X, Y)).
+belong((X, Y), inv(r_prim(P)), S) :- const(X), const(Y), pred(P), arity(P, 2), state(S), hold(S, P, (Y, X)).
 
-r_basic(r_prim(P)) :- belong(_, r_prim(P), _), i = 1.
-r_basic(inv(R)) :- belong(_, inv(R), _), i = 1.
-role(R) :- r_basic(R), i = 1.
-cost(R, 1) :- r_basic(R), i = 1.
+r_basic(r_prim(P)) :- belong(_, r_prim(P), _).
+r_basic(inv(R)) :- belong(_, inv(R), _).
+role(R, 1) :- r_basic(R).
+%cost(R, 1) :- r_basic(R), depth = 1.
 
 %Transitive roles based on primitives and inverses
-belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S), i = 1.
-belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S), i = 1.
-role(tran(R)) :- belong(_, tran(R), _), i = 1.
+belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S).
+belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S).
+role(tran(R), depth) :- belong(_, tran(R), _).
 
-cost(tran(R), 1) :- belong(_, tran(R), _), i = 1.
+%cost(tran(R), 1) :- belong(_, tran(R), _), i = 1.
+
+#program equal_role(depth).
 
 % Define concepts of the form R = R' for roles R and R'
 
-belong(X, eq(R1, R2), S) :- const(X), role(R1), role(R2), state(S), exp(eq(R1, R2), i),
+belong(X, eq(R1, R2), S) :- const(X), role(R1, _), role(R2, _), state(S), exp(eq(R1, R2), depth),
                             belong((X, Y), R1, S) : belong((X, Y), R2, S), const(Y);
                             belong((X, Y), R2, S) : belong((X, Y), R1, S), const(Y);
                             R1 < R2.
 
-exp(eq(R1, R2), i) :- role(R1), role(R2), i = 2, cost(R1, N1), cost(R2, N2), N1 + N2 < maxcost.
-cost(eq(R1, R2), N1 + N2 + 1) :- exp(eq(R1, R2), i), cost(R1, N1), cost(R2, N2).
+exp(eq(R1, R2), depth) :- role(R1, 1), role(R2, 1), depth = 3.
+%cost(eq(R1, R2), N1 + N2 + 1) :- exp(eq(R1, R2), i), cost(R1, N1), cost(R2, N2).
+
+#program uni(depth).
 
 %Define existential and universal restrictions on role-concept pairs
 
-belong(X, uni(R, C), S) :-  const(X), exp(uni(R, C), i), state(S),
-                            belong((X, Y), R, S) : const(Y);
-                            belong(Y, C, S) : const(Y).
+belong(X, uni(R, C), S) :-  
+    const(X), exp(uni(R, C), depth), state(S),
+    belong((X, Y), R, S) : const(Y);
+    belong(Y, C, S) : const(Y).
 
-exp(uni(R, C), i) :- role(R), conc(C, i-1), cost(R, NR), cost(C, NC), NR + NC < maxcost.
-cost(uni(R, C), NR + NC + 1) :- exp(uni(R, C), i), cost(R, NR), cost(C, NC).
+exp(uni(R, C), depth) :- role(R, 1), conc(C, depth-2).
+%cost(uni(R, C), NR + NC + 1) :- exp(uni(R, C), i), cost(R, NR), cost(C, NC).
+
+#program exi(depth).
 
 %Existential restriction:
-belong(X, exi(R, C), S) :-  const(X), const(Y), exp(exi(R, C), i), state(S),
-                            belong((X, Y), R, S), belong(Y, C, S).
+belong(X, exi(R, C), S) :-
+    const(X), const(Y), exp(exi(R, C), depth), state(S),
+    belong((X, Y), R, S), belong(Y, C, S).
 
-exp(exi(R, C), i) :- role(R), conc(C, i-1), cost(R, NR), cost(C, NC), NR + NC < maxcost.
-cost(exi(R, C), NR + NC + 1) :- exp(exi(R, C), i), cost(R, NR), cost(C, NC).
+exp(exi(R, C), depth) :- role(R, 1), conc(C, depth-2).
+%cost(exi(R, C), NR + NC + 1) :- exp(exi(R, C), i), cost(R, NR), cost(C, NC).

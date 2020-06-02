@@ -25,20 +25,7 @@ def filter_symbols(ctl, program="base", prog_args=[]):
             keep = filter(lambda symbol: symbol.name == "keep__", model.symbols(atoms=True))
             results.append([symbol.arguments[0] for symbol in keep])
     return results
-'''
-def filter_symbols(symbols, rules, program="base", prog_args=[]):
-    ctl = clingo.Control()
-    ctl.load(rules)
-    ctl.add(program, prog_args, str(ModelUtil(symbols)))
-    results = []
-    ctl.ground([("base", [])])
-    ctl.ground([(program, prog_args)])
-    with ctl.solve(yield_ = True) as models:
-        for model in models:
-            keep = filter(lambda symbol: symbol.name == "keep__", model.symbols(atoms=True))
-            results.append([symbol.arguments[0] for symbol in keep])
-    return results
-'''
+
 def get_symbols(symbols, filter):
     model_str = []
     for symbol in symbols:
