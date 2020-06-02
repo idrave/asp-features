@@ -13,7 +13,7 @@ conc(C)             Expression C represents a concept. No two elements of conc r
 role(R)             Expression R represents a role.
 
 *%
-
+#defined role/2.
 %*
 Load sample and logic
 Generate batch of expressions

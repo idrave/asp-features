@@ -69,7 +69,7 @@ class Grammar:
                 sys.exit()
 
     #Return set of symbols regarding certain concept
-    def expandConceptSet(self, program, program_args, layers, out_file, roles=False):
+    def expandConceptSet(self, program, program_args, layers, out_file, roles=False, logging=False):
         ctl = clingo.Control()
         ctl.load(str(self.concept_file))
         for layer in layers:
@@ -99,7 +99,11 @@ class Grammar:
             ctl.ground([('base', [])])
             symbols = self.filter_symbols(ctl, self.to_concept)
             del(ctl)
+            
         ModelUtil(symbols).write(str(out_file))
+        if logging:
+            count = self.countConcepts(out_file)
+            print('{}: {} concepts.'.format(out_file, count))
 
 
     def groundLayer(self, ctl, i):
@@ -109,39 +113,45 @@ class Grammar:
             ctl.load(str(concept_file))
         ctl.ground([("base", [])])
 
-    def expandLayer(self, depth):
+    def expandLayer(self, depth, logging=False):
 
         self.layers[depth] = []
         if depth == 1:
             primitive_file = self.path/'primitive.lp'
-            self.expandConceptSet('primitive', [depth], [self.sample_code], primitive_file)
+            self.expandConceptSet('primitive', [depth], [self.sample_code], primitive_file, logging=logging)
             self.layers[depth].append(primitive_file)
+            self.concepts.append(primitive_file)
             return
 
         if depth == 2:
             negation_file = self.path/'negation.lp'
-            self.expandConceptSet('negation', [depth], [depth-1, self.simple_code], negation_file)
+            self.expandConceptSet('negation', [depth], [depth-1, self.simple_code], negation_file, logging=logging)
             self.layers[depth].append(negation_file)
+            self.concepts.append(negation_file)
             return
 
         if depth == 3:
             equalrole_file = self.path/'equal_role.lp'
-            self.expandConceptSet('equal_role', [depth], [self.roles, self.simple_code], equalrole_file)
+            self.expandConceptSet('equal_role', [depth], [self.roles, self.simple_code], equalrole_file, logging=logging)
             self.layers[depth].append(equalrole_file)
+            self.concepts.append(equalrole_file)
 
         for i in range(1,depth-1):
             conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
             self.expandConceptSet('conjunction', [depth, i, depth-i-1],
-                [i, depth-i-1, self.simple_code], conjunction_file)
+                [i, depth-i-1, self.simple_code], conjunction_file, logging=logging)
             self.layers[depth].append(conjunction_file)
+            self.concepts.append(conjunction_file)
 
         exi_file = self.path/'exi_{}.lp'.format(depth)
-        self.expandConceptSet('exi', [depth], [depth-2,self.roles, self.simple_code], exi_file)
+        self.expandConceptSet('exi', [depth], [depth-2,self.roles, self.simple_code], exi_file, logging=logging)
         self.layers[depth].append(exi_file)
+        self.concepts.append(exi_file)
         
         uni_file = self.path/'uni_{}.lp'.format(depth)
-        self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file)
+        self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file, logging=logging)
         self.layers[depth].append(uni_file)
+        self.concepts.append(uni_file)
 
     def prune_symbols(self, ctl, program, keep_prog):
         results = []
@@ -156,7 +166,7 @@ class Grammar:
 
             keep = filter(lambda symbol: symbol.name == "keep__", models[0].symbols(atoms=True))
             results = [symbol.arguments[0] for symbol in keep]
-        print("RESULTS: {}".format(len(results)))
+        #print("RESULTS: {}".format(len(results)))
         return results
 
     def filter_symbols(self, ctl, keep_prog):
@@ -170,7 +180,7 @@ class Grammar:
 
             keep = filter(lambda symbol: symbol.name == "keep__", models[0].symbols(atoms=True))
             results = [symbol.arguments[0] for symbol in keep]
-        print("RESULTS: {}".format(len(results)))
+        #print("RESULTS: {}".format(len(results)))
         return results
 
     def simplifySample(self, out_file):
@@ -188,14 +198,16 @@ class Grammar:
         role_file = self.path/'roles.lp'
         self.expandConceptSet('roles', [], [self.sample_code], role_file, roles=True)
         self.layers[self.roles] = [role_file]
-
+        
         for depth in range(1, max_depth+1):
-            self.expandLayer(depth)
+            if logging: print('Depth {}:'.format(depth))
+            self.expandLayer(depth, logging=logging)
             if logging:
                 count = 0
                 for conc in self.layers[depth]:
-                    count += self.countConcepts(conc)
-                print("Depth {}: {} concepts.".format(depth, count))
+                    aux = self.countConcepts(conc)
+                    count += aux
+                print("Total {}: {} concepts.\n".format(depth, count))
 
 
     def countConcepts(self, file_name):
