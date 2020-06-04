@@ -59,6 +59,7 @@ belong(X, neg(C), S) :- const(X), exp(neg(C), depth), state(S), not belong(X, C,
 exp(neg(C), depth) :- conc(C, depth-1), depth = 2.
 
 %Upper bound in concept and role complexity
+%*
 #program conjunction(depth, input1, input2).
 
 :- not depth = input1 + input2 + 1.
@@ -74,6 +75,25 @@ exp(and(C1, C2), depth) :-
 exp(and(C1, and(C2, C3)), depth) :-
     conc(C1, input1), conc(and(C2, C3), input2),
     not is_and(C1), C1 < C2.
+
+belong(X, and(C1, C2), S) :-    
+    const(X), exp(and(C1, C2), depth), state(S),
+    belong(X, C1, S), belong(X, C2, S).
+*%
+#program conjunction(depth, input1, input2).
+
+:- not depth = input1 + input2 + 1.
+
+%Rule for conjunction
+
+is_and(and(C1, C2)) :- conc(and(C1, C2), _).
+
+exp(and(C1, C2), depth) :-
+    conc(C1, input1), conc(C2, input2), input1 < input2.
+
+exp(and(C1, C2), depth) :-
+    conc(C1, input1), conc(C2, input2), input1 = input2, C1 < C2.
+
 
 belong(X, and(C1, C2), S) :-    
     const(X), exp(and(C1, C2), depth), state(S),

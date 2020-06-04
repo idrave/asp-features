@@ -139,7 +139,7 @@ class Grammar:
             self.layers[depth].append(equalrole_file)
             self.concepts.append(equalrole_file)
 
-        for i in range(1,depth-1):
+        for i in range(1,(depth+1)//2):
             conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
             self.expandConceptSet('conjunction', [depth, i, depth-i-1],
                 [i, depth-i-1, self.simple_code], conjunction_file, logg=logg)
@@ -155,6 +155,39 @@ class Grammar:
         self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file, logg=logg)
         self.layers[depth].append(uni_file)
         self.concepts.append(uni_file)
+
+    def loadLayer(self, depth, logg=False):
+        self.layers[depth] = []
+        if depth == 1:
+            primitive_file = self.path/'primitive.lp'
+            self.layers[depth].append(primitive_file)
+            self.concepts.append(primitive_file)
+            return
+
+        if depth == 2:
+            negation_file = self.path/'negation.lp'
+            self.layers[depth].append(negation_file)
+            self.concepts.append(negation_file)
+            return
+
+        if depth == 3:
+            equalrole_file = self.path/'equal_role.lp'
+            self.layers[depth].append(equalrole_file)
+            self.concepts.append(equalrole_file)
+
+        for i in range(1,(depth+1)//2):
+            conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
+            self.layers[depth].append(conjunction_file)
+            self.concepts.append(conjunction_file)
+
+        exi_file = self.path/'exi_{}.lp'.format(depth)
+        self.layers[depth].append(exi_file)
+        self.concepts.append(exi_file)
+        
+        uni_file = self.path/'uni_{}.lp'.format(depth)
+        self.layers[depth].append(uni_file)
+        self.concepts.append(uni_file)
+
 
     def prune_symbols(self, ctl, program, keep_prog):
         results = []
@@ -192,19 +225,39 @@ class Grammar:
         symbols = self.filter_symbols(ctl, self.simplify)
         ModelUtil(symbols).write(str(out_file))
 
-    def expandGrammar(self, max_depth, logg=False):
-        self.createDir()
+    def expandGrammar(self, start_depth, max_depth, logg=False):
+        logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
+        if start_depth < 1:
+            self.createDir()
+            simple_sample = self.path/'simple.lp'
+            self.simplifySample(simple_sample)
+            self.layers[self.simple_code] = [simple_sample]
+
+            role_file = self.path/'roles.lp'
+            self.expandConceptSet('roles', [], [self.sample_code], role_file, roles=True)
+            self.layers[self.roles] = [role_file]
+            start_depth = 1
+        
+        for depth in range(start_depth, max_depth+1):
+            if logg: print('Depth {}:'.format(depth))
+            self.expandLayer(depth, logg=logg)
+            if logg:
+                count = 0
+                for conc in self.layers[depth]:
+                    aux = self.countConcepts(conc)
+                    count += aux
+                print("Total {}: {} concepts.\n".format(depth, count))
+
+    def loadGrammar(self, start_depth, logg=False):
         simple_sample = self.path/'simple.lp'
-        self.simplifySample(simple_sample)
         self.layers[self.simple_code] = [simple_sample]
 
         role_file = self.path/'roles.lp'
-        self.expandConceptSet('roles', [], [self.sample_code], role_file, roles=True)
         self.layers[self.roles] = [role_file]
         
-        for depth in range(1, max_depth+1):
+        for depth in range(1, start_depth):
             if logg: print('Depth {}:'.format(depth))
-            self.expandLayer(depth, logg=logg)
+            self.loadLayer(depth, logg=logg)
             if logg:
                 count = 0
                 for conc in self.layers[depth]:
@@ -227,6 +280,7 @@ if __name__ == "__main__":
     parser.add_argument('sample', type=str, help='Sample file path')
     parser.add_argument('out_dir', type=str, help='Output folder')
     parser.add_argument('max_depth', type=int, help='Maximum concept depth')
+    parser.add_argument('-s', '--start',action='store',default=1, type=int, help='Starting depth')
     parser.add_argument('--fast', action='store_true', help='Prunning with cardinality')
     parser.add_argument('--std', action='store_true', help='Standard sound prunning')
     parser.add_argument('--mix', action='store_true', help='Cardinality + standard prunning')
@@ -245,4 +299,8 @@ if __name__ == "__main__":
     comp_type = 'standard' if comp_type is None else comp_type    
     print(comp_type)
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
-    grammar.expandGrammar(args.max_depth, logg=True)
+    import time
+    start = time.time()
+    grammar.loadGrammar(args.start, logg=True)
+    grammar.expandGrammar(args.start, args.max_depth, logg=True)
+    print("Took {}s.".format(round(time.time()-start, 2)))
