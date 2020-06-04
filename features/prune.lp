@@ -21,7 +21,7 @@ keep__(exp(C, N)) :- exp(C, N), belong(_, C, _), differ(C, D) : compare(C, D).
 keep__(belong(X, C, S)) :- keep__(exp(C, _)), belong(X, C, S).
 keep__(cardinality(C, N, S)) :- keep__(exp(C, _)), cardinality(C, N, S).
 
-#program prun_exp_conc.
+#program prune_exp_conc.
 
 compare(C, D) :-
     exp(C, _), conc(D, _).

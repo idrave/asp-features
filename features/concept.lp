@@ -94,7 +94,7 @@ role(R, 1) :- r_basic(R).
 %Transitive roles based on primitives and inverses
 belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S).
 belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S).
-role(tran(R), depth) :- belong(_, tran(R), _).
+role(tran(R), 1) :- belong(_, tran(R), _).
 
 %cost(tran(R), 1) :- belong(_, tran(R), _), i = 1.
 

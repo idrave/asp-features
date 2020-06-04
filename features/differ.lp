@@ -9,12 +9,10 @@ differ(C1, C2) :- compare(C1, C2), state(S), cardinality(C1, N, S),
 
 #program standard_differ.
 differ(C1, C2) :-  
-    compare(C1, C2), const(X), state(S),
-    belong(X, C1, S), not belong(X, C2, S).
-
+    compare(C1, C2), belong(X, C1, S), not belong(X, C2, S).
+%NOTE: const and state are not here lmaaaaaaaaaaaao
 differ(C1, C2) :-  
-    compare(C1, C2), const(X), state(S),    
-    not belong(X, C1, S), belong(X, C2, S).
+    compare(C1, C2), not belong(X, C1, S), belong(X, C2, S).
         
 
 #program optimal_differ_start.

@@ -1,6 +1,7 @@
 
 import clingo
 import sys
+import logging
 import pathlib
 import re
 import argparse
@@ -69,7 +70,7 @@ class Grammar:
                 sys.exit()
 
     #Return set of symbols regarding certain concept
-    def expandConceptSet(self, program, program_args, layers, out_file, roles=False, logging=False):
+    def expandConceptSet(self, program, program_args, layers, out_file, roles=False, logg=False):
         ctl = clingo.Control()
         ctl.load(str(self.concept_file))
         for layer in layers:
@@ -86,6 +87,7 @@ class Grammar:
         else:
             symbols = self.filter_symbols(ctl, self.get_roles)
         del(ctl)
+        logging.debug("Expressions: {}".format(sum([symbol.name == 'exp' for symbol in symbols])))
         if not roles:
             for concept in self.concepts:
                 ctl = clingo.Control()
@@ -94,6 +96,7 @@ class Grammar:
                 ctl.ground([('base', [])])
                 symbols = self.prune_symbols(ctl, self.prune_exp_conc, self.keep_exp)
                 del(ctl)
+            logging.debug("Expressions: {}".format(sum([symbol.name == 'exp' for symbol in symbols])))
             ctl = clingo.Control()
             ctl.add('base', [], str(ModelUtil(symbols)))
             ctl.ground([('base', [])])
@@ -101,7 +104,7 @@ class Grammar:
             del(ctl)
             
         ModelUtil(symbols).write(str(out_file))
-        if logging:
+        if logg:
             count = self.countConcepts(out_file)
             print('{}: {} concepts.'.format(out_file, count))
 
@@ -113,43 +116,43 @@ class Grammar:
             ctl.load(str(concept_file))
         ctl.ground([("base", [])])
 
-    def expandLayer(self, depth, logging=False):
+    def expandLayer(self, depth, logg=False):
 
         self.layers[depth] = []
         if depth == 1:
             primitive_file = self.path/'primitive.lp'
-            self.expandConceptSet('primitive', [depth], [self.sample_code], primitive_file, logging=logging)
+            self.expandConceptSet('primitive', [depth], [self.sample_code], primitive_file, logg=logg)
             self.layers[depth].append(primitive_file)
             self.concepts.append(primitive_file)
             return
 
         if depth == 2:
             negation_file = self.path/'negation.lp'
-            self.expandConceptSet('negation', [depth], [depth-1, self.simple_code], negation_file, logging=logging)
+            self.expandConceptSet('negation', [depth], [depth-1, self.simple_code], negation_file, logg=logg)
             self.layers[depth].append(negation_file)
             self.concepts.append(negation_file)
             return
 
         if depth == 3:
             equalrole_file = self.path/'equal_role.lp'
-            self.expandConceptSet('equal_role', [depth], [self.roles, self.simple_code], equalrole_file, logging=logging)
+            self.expandConceptSet('equal_role', [depth], [self.roles, self.simple_code], equalrole_file, logg=logg)
             self.layers[depth].append(equalrole_file)
             self.concepts.append(equalrole_file)
 
         for i in range(1,depth-1):
             conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
             self.expandConceptSet('conjunction', [depth, i, depth-i-1],
-                [i, depth-i-1, self.simple_code], conjunction_file, logging=logging)
+                [i, depth-i-1, self.simple_code], conjunction_file, logg=logg)
             self.layers[depth].append(conjunction_file)
             self.concepts.append(conjunction_file)
 
         exi_file = self.path/'exi_{}.lp'.format(depth)
-        self.expandConceptSet('exi', [depth], [depth-2,self.roles, self.simple_code], exi_file, logging=logging)
+        self.expandConceptSet('exi', [depth], [depth-2,self.roles, self.simple_code], exi_file, logg=logg)
         self.layers[depth].append(exi_file)
         self.concepts.append(exi_file)
         
         uni_file = self.path/'uni_{}.lp'.format(depth)
-        self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file, logging=logging)
+        self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file, logg=logg)
         self.layers[depth].append(uni_file)
         self.concepts.append(uni_file)
 
@@ -189,7 +192,7 @@ class Grammar:
         symbols = self.filter_symbols(ctl, self.simplify)
         ModelUtil(symbols).write(str(out_file))
 
-    def expandGrammar(self, max_depth, logging=False):
+    def expandGrammar(self, max_depth, logg=False):
         self.createDir()
         simple_sample = self.path/'simple.lp'
         self.simplifySample(simple_sample)
@@ -200,9 +203,9 @@ class Grammar:
         self.layers[self.roles] = [role_file]
         
         for depth in range(1, max_depth+1):
-            if logging: print('Depth {}:'.format(depth))
-            self.expandLayer(depth, logging=logging)
-            if logging:
+            if logg: print('Depth {}:'.format(depth))
+            self.expandLayer(depth, logg=logg)
+            if logg:
                 count = 0
                 for conc in self.layers[depth]:
                     aux = self.countConcepts(conc)
@@ -227,9 +230,12 @@ if __name__ == "__main__":
     parser.add_argument('--fast', action='store_true', help='Prunning with cardinality')
     parser.add_argument('--std', action='store_true', help='Standard sound prunning')
     parser.add_argument('--mix', action='store_true', help='Cardinality + standard prunning')
+    parser.add_argument('-d', '--debug',help="Print debugging statements",
+        action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
     args = parser.parse_args()
     
 
+    logging.basicConfig(level=args.loglevel)
     if sum((int(b) for b in (args.fast, args.std, args.mix))) > 1:
         RuntimeError('More than one prunning type specified')
 
@@ -239,4 +245,4 @@ if __name__ == "__main__":
     comp_type = 'standard' if comp_type is None else comp_type    
     print(comp_type)
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
-    grammar.expandGrammar(args.max_depth, logging=True)
+    grammar.expandGrammar(args.max_depth, logg=True)
