@@ -17,13 +17,16 @@ def load_symbols(file, program="base", prog_args=[]):
         models = to_model_list(models)
         return models[0].symbols(atoms = True)
 
-def filter_symbols(ctl, program="base", prog_args=[]):
+def filter_symbols(ctl, single=True):
     results = []
-    ctl.ground([(program, prog_args)])
     with ctl.solve(yield_ = True) as models:
+        models = list(models)
+        if single:
+            check_multiple(models)
         for model in models:
             keep = filter(lambda symbol: symbol.name == "keep__", model.symbols(atoms=True))
             results.append([symbol.arguments[0] for symbol in keep])
+    if single: return results[0]
     return results
 
 def get_symbols(symbols, filter):
@@ -35,9 +38,9 @@ def get_symbols(symbols, filter):
 
 def check_multiple(models):
     if len(models) == 0:
-            raise RuntimeError("Not satisfiable!")
+        raise RuntimeError("Not satisfiable!")
     elif len(models) > 1:
-        raise RuntimeWarning("More than one model found!")
+        raise RuntimeError("More than one model found!")
 
 class ModelUtil:
     def __init__(self, symbols : list):
@@ -54,8 +57,8 @@ class ModelUtil:
                 model_str.append(symbol)
         return model_str
 
-    def write(self, filename):
-        with open(filename, 'w') as file:
+    def write(self, filename, type_='w'):
+        with open(filename, type_) as file:
             file.write(str(self))
 
     def count_symbol(self, symbol_compare):

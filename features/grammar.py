@@ -7,9 +7,44 @@ import re
 import argparse
 from pathlib import Path
 from model_util import check_multiple
-from model_util import to_model_list, ModelUtil, filter_symbols
-pathlib.Path(__file__).parent.absolute()
+from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple
 
+class Logic:
+    #logicPath = Path(__file__).parent.absolute()
+    logicPath = Path('/home/ivan/Documents/ai/features/features')
+    grammarFile = str(logicPath/'concept.lp')
+    base = ('base', [])
+    @staticmethod
+    def primitive(depth):
+        return ('primitive', [depth])
+    
+    roles = ('roles', [])
+
+    @staticmethod
+    def negation(depth):
+        return ('negation', [depth])
+    @staticmethod
+    def equalRole(depth):
+        return ('equal_role', [depth])
+    @staticmethod
+    def conjunction(depth, in1, in2):
+        return ('conjunction', [depth, in1, in2])
+    @staticmethod
+    def uni(depth):
+        return ('uni', [depth])
+    @staticmethod
+    def exi(depth):
+        return ('exi', [depth])
+
+    pruneFile = str(logicPath/'prune.lp')
+    keepExp = ('keep_exp', []) 
+    compareExp = ('compare_exp', []) 
+    pruneExp = ('prune_exp', [])
+    compareExpConc = ('compare_exp_conc', []) 
+    toConcept = ('exp2conc', [])
+    keepRoles = ('get_roles', [])
+    simplifySample = ('simplify', [])
+    divide = ('divide', [])
 
 class Comparison:
     def __init__(self, path, comp_type='standard'):
@@ -40,25 +75,127 @@ class Comparison:
         ctl.ground([('optimal_differ_end', [])])
         ctl.solve()
 
+class KnowledgeSet:
+    def __init__(self, name, file):
+        self.name = name
+        self.file = str(file)
+
+    def load(self, ctl):
+        ctl.load(self.file)
+
+class GrammarKnowledge(KnowledgeSet):
+    def __init__(self, name, file, program, requirements):
+        super(GrammarKnowledge, self).__init__(name, file)
+        
+        self.program = program
+        self.requirements = requirements
+        self.isGenerated = False
+        self.isStored = False
+        self._symbols = None
+
+    def _solveProgram(self):
+        if self.isGenerated:
+            raise RuntimeError("Set {} already generated.".format(self.name))
+        ctl = clingo.Control()
+        for req in self.requirements:
+            req.load(ctl)
+        
+        ctl.load(Logic.grammarFile)
+        ctl.ground([('base', []), self.program])
+        with ctl.solve(yield_=True) as models:
+            models = list(models)
+            check_multiple(models)
+            self._symbols = models[0].symbols(atoms=True)
+        del(ctl)
+
+    def generate(self):          
+        self._solveProgram()
+        self.isGenerated = True
+        
+    def filter(self, prune):
+        if not self.isGenerated:
+            raise RuntimeError("Set {} has not been generated. Cannot filter".format(self.name))
+        if self.isStored:
+            raise RuntimeError("Set {} has been stored in a file. Cannot filter".format(self.name))
+        ctl = clingo.Control()
+        ctl.load(Logic.pruneFile)
+        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        ctl.ground([('base', []), prune])
+        self._symbols = filter_symbols(ctl, single=True)
+        del(ctl)
+
+    def write(self):
+        if not self.isGenerated:
+            raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
+        if self.isStored:
+            raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
+        with open(self.file, 'w') as file:
+            file.write(str(ModelUtil(self._symbols)))
+        self.isStored = True
+        del(self._symbols)
+
+
+class ConceptSet(GrammarKnowledge):
+    def __init__(self, name, file, program, requirements):
+        super(ConceptSet, self).__init__(name, file, program, requirements)
+        self.isConcept = False
+
+    def generate(self, comparison: Comparison):
+        super(ConceptSet, self)._solveProgram()
+        ctl = clingo.Control()
+        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        ctl.load(Logic.pruneFile)
+        ctl.ground([('base', []), Logic.compareExp])
+        comparison.compare(ctl)
+        ctl.ground([Logic.pruneExp])
+        self._symbols = filter_symbols(ctl, single=True)
+        del(ctl)
+        self.isGenerated = True
+
+    def removeRedundant(self, concepts, comparison: Comparison):
+        ctl = clingo.Control()
+        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        ctl.load(Logic.pruneFile)
+        concepts.load(ctl)
+        ctl.ground([('base', []), Logic.compareExpConc])
+        comparison.compare(ctl)
+        ctl.ground([Logic.pruneExp])
+        self._symbols = filter_symbols(ctl, single=True)
+        del(ctl)
+
+    def toConcept(self):
+        if not self.isGenerated:
+            raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
+        if self.isStored:
+            raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
+        ctl = clingo.Control()
+        ctl.load(Logic.pruneFile)
+        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        ctl.ground([('base', []), Logic.toConcept])
+        self._symbols = filter_symbols(ctl, single=True)
+        del(ctl)
+
+    def getSymbols(self):
+        return self._symbols
+
+    def clean(self):
+        del(self._symbols)
+
+    def write(self):
+        raise RuntimeError("OHNO")
+
+
 class Grammar:
     def __init__(self, sample, path, comp_type='standard'):
-        self.logic_path = Path(__file__).parent.absolute()
-        self.sample = Path(sample)
-        self.concept_file = self.logic_path/'concept.lp'
-        self.sample_code = 'sample'
-        self.simple_code = 'simple'
-        self.roles = 'roles'
-        self.layers = {self.sample_code : [self.sample]}
-        self.concepts = []
+        self.samplePath = Path(sample)
         self.path = Path(path)
-        self.prune = self.logic_path/'prune.lp'
-        self.prune_exp = ('prune_exp', [])
-        self.prune_exp_conc = ('prune_exp_conc', [])
-        self.keep_exp = ('keep_exp', [])
-        self.get_roles= ('get_roles', [])
-        self.to_concept= ('exp2conc', [])
-        self.simplify= ('simplify', [])
-        self.compare = Comparison(self.logic_path, comp_type=comp_type)
+        self.sample = KnowledgeSet('sample', self.samplePath)
+        self.roles = GrammarKnowledge('roles', self.path/'roles.lp', Logic.roles, [self.sample])
+        self.simpleSample = GrammarKnowledge('simple_sample', self.path/'simple_sample.lp', Logic.base, [self.sample])
+        self.depth = {}
+        self.concepts = []
+        
+        self.compare = Comparison(Logic.logicPath, comp_type=comp_type)
     
     def createDir(self):
         print(self.path.absolute())
@@ -69,210 +206,223 @@ class Grammar:
                 print(repr(e))
                 sys.exit()
 
-    #Return set of symbols regarding certain concept
-    def expandConceptSet(self, program, program_args, layers, out_file, roles=False, logg=False):
-        ctl = clingo.Control()
-        ctl.load(str(self.concept_file))
-        for layer in layers:
-            self.groundLayer(ctl, layer)
-        ctl.ground([(program, program_args)])
-        with ctl.solve(yield_=True) as models:
-            model_list = [model for model in models]
-            if len(model_list) != 1:
-                raise RuntimeError("Only one model expected, more than one found.")
+    def getDepth(self, depth, simple=False, logg=False):
+        concept_list = []
+        self.depth[depth] = []
+        if depth == 1:
+            primitive_file = self.path/'primitive.lp'
+            print(str(primitive_file))
+            concept = ConceptSet('primitive', primitive_file, Logic.primitive(depth),[self.sample])
+            concept_list.append(concept)
+            return concept_list
 
-        symbols = []
-        if not roles:
-            symbols = self.prune_symbols(ctl, self.prune_exp, self.keep_exp)
+        if depth == 2:
+            negation_file = self.path/'negation.lp'
+            concept = ConceptSet(
+                'negation', negation_file, Logic.negation(depth),
+                [self.simpleSample] + self.depth[1]
+            )
+            concept_list.append(concept)
+            return concept_list
+
+        if depth == 3:
+            equalrole_file = self.path/'equal_role.lp'
+            concept = ConceptSet(
+                'equal_role', equalrole_file, Logic.equalRole(depth),
+                [self.simpleSample, self.roles]
+            )
+            concept_list.append(concept)
+
+        for i in range(1,(depth+1)//2):
+            if simple:
+                name = 'conjunction_{}_{}'.format(depth, i)
+                conjunction_file = self.path/'{}.lp'.format(name)
+                concept = ConceptSet(
+                    name, conjunction_file, Logic.conjunction(depth, i, depth-i-1),
+                    [self.simpleSample] + self.depth[i] + self.depth[depth-i-1]
+                )
+                concept_list.append(concept)
+            else:
+                for concept1 in self.depth[i]:
+                    for concept2 in self.depth[depth-i-1]:
+                        name = 'conjunction_{}_{}_{}'.format(depth, concept1.name, concept2.name)
+                        conjunction_file = self.path/'{}.lp'.format(name)
+                        concept = ConceptSet(
+                            name, conjunction_file, Logic.conjunction(depth, i, depth-i-1),
+                            [self.simpleSample, concept1, concept2]
+                        )
+                        concept_list.append(concept)
+
+        if simple:
+            name = 'exi_{}'.format(depth)
+            exi_file = self.path/'{}.lp'.format(name)
+            concept = ConceptSet(
+                name, exi_file, Logic.exi(depth),
+                [self.simpleSample, self.roles] + self.depth[depth-2]
+            )
+            concept_list.append(concept)
+            name = 'uni_{}'.format(depth)
+            uni_file = self.path/'{}.lp'.format(name)
+            concept = ConceptSet(
+                name, uni_file, Logic.uni(depth),
+                [self.simpleSample, self.roles] + self.depth[depth-2]
+            )
+            concept_list.append(concept)
         else:
-            symbols = self.filter_symbols(ctl, self.get_roles)
-        del(ctl)
-        logging.debug("Expressions: {}".format(sum([symbol.name == 'exp' for symbol in symbols])))
-        if not roles:
-            for concept in self.concepts:
-                ctl = clingo.Control()
-                ctl.add('base', [], str(ModelUtil(symbols)))
-                ctl.load(str(concept))
-                ctl.ground([('base', [])])
-                symbols = self.prune_symbols(ctl, self.prune_exp_conc, self.keep_exp)
-                del(ctl)
-            logging.debug("Expressions: {}".format(sum([symbol.name == 'exp' for symbol in symbols])))
-            ctl = clingo.Control()
-            ctl.add('base', [], str(ModelUtil(symbols)))
-            ctl.ground([('base', [])])
-            symbols = self.filter_symbols(ctl, self.to_concept)
-            del(ctl)
-            
-        ModelUtil(symbols).write(str(out_file))
-        if logg:
-            count = self.countConcepts(out_file)
-            print('{}: {} concepts.'.format(out_file, count))
+            for conc in self.depth[depth-2]:
+                name = 'exi_{}_{}'.format(depth, conc.name)
+                exi_file = self.path/'{}.lp'.format(name)
+                concept = ConceptSet(
+                    name, exi_file, Logic.exi(depth),
+                    [self.simpleSample, self.roles, conc]
+                )
+                concept_list.append(concept)
+                name = 'uni_{}_{}'.format(depth, conc.name)
+                uni_file = self.path/'{}.lp'.format(name)
+                concept = ConceptSet(
+                    name, uni_file, Logic.uni(depth),
+                    [self.simpleSample, self.roles, conc]
+                )
+                concept_list.append(concept)
+        return concept_list
 
-
-    def groundLayer(self, ctl, i):
-        if i not in self.layers:
-            raise RuntimeError('Cannot access set of symbols that does not exist.')
-        for concept_file in self.layers[i]:
-            ctl.load(str(concept_file))
-        ctl.ground([("base", [])])
-
-    def expandLayer(self, depth, logg=False):
-
-        self.layers[depth] = []
-        if depth == 1:
-            primitive_file = self.path/'primitive.lp'
-            self.expandConceptSet('primitive', [depth], [self.sample_code], primitive_file, logg=logg)
-            self.layers[depth].append(primitive_file)
-            self.concepts.append(primitive_file)
-            return
-
-        if depth == 2:
-            negation_file = self.path/'negation.lp'
-            self.expandConceptSet('negation', [depth], [depth-1, self.simple_code], negation_file, logg=logg)
-            self.layers[depth].append(negation_file)
-            self.concepts.append(negation_file)
-            return
-
-        if depth == 3:
-            equalrole_file = self.path/'equal_role.lp'
-            self.expandConceptSet('equal_role', [depth], [self.roles, self.simple_code], equalrole_file, logg=logg)
-            self.layers[depth].append(equalrole_file)
-            self.concepts.append(equalrole_file)
-
-        for i in range(1,(depth+1)//2):
-            conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
-            self.expandConceptSet('conjunction', [depth, i, depth-i-1],
-                [i, depth-i-1, self.simple_code], conjunction_file, logg=logg)
-            self.layers[depth].append(conjunction_file)
-            self.concepts.append(conjunction_file)
-
-        exi_file = self.path/'exi_{}.lp'.format(depth)
-        self.expandConceptSet('exi', [depth], [depth-2,self.roles, self.simple_code], exi_file, logg=logg)
-        self.layers[depth].append(exi_file)
-        self.concepts.append(exi_file)
-        
-        uni_file = self.path/'uni_{}.lp'.format(depth)
-        self.expandConceptSet('uni', [depth], [depth-2,self.roles, self.simple_code], uni_file, logg=logg)
-        self.layers[depth].append(uni_file)
-        self.concepts.append(uni_file)
-
-    def loadLayer(self, depth, logg=False):
-        self.layers[depth] = []
-        if depth == 1:
-            primitive_file = self.path/'primitive.lp'
-            self.layers[depth].append(primitive_file)
-            self.concepts.append(primitive_file)
-            return
-
-        if depth == 2:
-            negation_file = self.path/'negation.lp'
-            self.layers[depth].append(negation_file)
-            self.concepts.append(negation_file)
-            return
-
-        if depth == 3:
-            equalrole_file = self.path/'equal_role.lp'
-            self.layers[depth].append(equalrole_file)
-            self.concepts.append(equalrole_file)
-
-        for i in range(1,(depth+1)//2):
-            conjunction_file = self.path/'conjunction_{}_{}.lp'.format(depth, i)
-            self.layers[depth].append(conjunction_file)
-            self.concepts.append(conjunction_file)
-
-        exi_file = self.path/'exi_{}.lp'.format(depth)
-        self.layers[depth].append(exi_file)
-        self.concepts.append(exi_file)
-        
-        uni_file = self.path/'uni_{}.lp'.format(depth)
-        self.layers[depth].append(uni_file)
-        self.concepts.append(uni_file)
-
-
-    def prune_symbols(self, ctl, program, keep_prog):
-        results = []
-        ctl.load(str(self.prune))
-        ctl.ground([program])
-        self.compare.compare(ctl)
-        ctl.ground([keep_prog])
-        with ctl.solve(yield_ = True) as models:
-            models = [model for model in models]
-            if len(models) != 1:
-                raise RuntimeError("Only one model expected, more than one found.")
-
-            keep = filter(lambda symbol: symbol.name == "keep__", models[0].symbols(atoms=True))
-            results = [symbol.arguments[0] for symbol in keep]
-        #print("RESULTS: {}".format(len(results)))
-        return results
-
-    def filter_symbols(self, ctl, keep_prog):
-        results = []
-        ctl.load(str(self.prune))
-        ctl.ground([keep_prog])
-        with ctl.solve(yield_ = True) as models:
-            models = [model for model in models]
-            if len(models) != 1:
-                raise RuntimeError("Only one model expected, more than one found.")
-
-            keep = filter(lambda symbol: symbol.name == "keep__", models[0].symbols(atoms=True))
-            results = [symbol.arguments[0] for symbol in keep]
-        #print("RESULTS: {}".format(len(results)))
-        return results
-
-    def simplifySample(self, out_file):
+    @staticmethod
+    def getNumConcepts(symbols, num):
+        concepts = []
+        count = 0
+        for symbol in symbols:
+            if symbol.name == 'conc':
+                if count < num:
+                    concepts.append(clingo.Function('keep__', [symbol, 0]))
+                    count += 1
+                else:
+                    concepts.append(clingo.Function('keep__', [symbol, 1]))
         ctl = clingo.Control()
-        self.groundLayer(ctl, self.sample_code)
-        symbols = self.filter_symbols(ctl, self.simplify)
-        ModelUtil(symbols).write(str(out_file))
+        ctl.load(Logic.pruneFile)
+        ctl.add('base', [], str(ModelUtil(concepts + symbols)))
+        ctl.ground([('base', []), Logic.divide])
+        result = Grammar.getSymbolGroups(ctl, 2)
+        del(ctl)
+        return tuple(result)
 
-    def expandGrammar(self, start_depth, max_depth, logg=False):
+    @staticmethod
+    def splitConcepts(symbols, group_size):
+        concepts = []
+        groups = 0
+        count = 0
+        for symbol in symbols:
+            if symbol.name == 'conc':
+                concepts.append(clingo.Function('keep__', [symbol, groups]))
+                #print(str(clingo.Function('keep__', [symbol, groups])))
+                count += 1
+                if count == group_size:
+                    count = 0
+                    groups += 1
+        ctl = clingo.Control()
+        ctl.load(Logic.pruneFile)
+        ctl.add('base', [], str(ModelUtil(concepts + symbols)))
+        ctl.ground([('base', []), Logic.divide])
+        result = Grammar.getSymbolGroups(ctl, groups+1)
+        del(ctl)
+        return result
+
+    @staticmethod
+    def getSymbolGroups(ctl, groups):
+        result = [[] for i in range(groups)]
+        with ctl.solve(yield_=True) as models:
+            models = list(models)
+            check_multiple(models)
+            symbols = models[0].symbols(atoms=True)
+            #print(len(symbols))
+            for symbol in symbols:
+                if symbol.name == 'keep__':
+                    gid = symbol.arguments[1]
+                    #print(gid)
+                    result[gid.number].append(symbol.arguments[0])
+        return result
+
+
+    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50):
         logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
-        if start_depth < 1:
+        if start_depth <= 1:
             self.createDir()
-            simple_sample = self.path/'simple.lp'
-            self.simplifySample(simple_sample)
-            self.layers[self.simple_code] = [simple_sample]
-
-            role_file = self.path/'roles.lp'
-            self.expandConceptSet('roles', [], [self.sample_code], role_file, roles=True)
-            self.layers[self.roles] = [role_file]
-            start_depth = 1
+            self.simpleSample.generate()
+            self.simpleSample.filter(Logic.simplifySample)
+            self.simpleSample.write()
+            self.roles.generate()
+            self.roles.filter(Logic.keepRoles)
+            self.roles.write()
         
         for depth in range(start_depth, max_depth+1):
             if logg: print('Depth {}:'.format(depth))
-            self.expandLayer(depth, logg=logg)
+            expressions = self.getDepth(depth, logg=logg)
+            residue = 0
+            group_n = 0
+            print([exp.name for exp in expressions])
+            for exp in expressions:
+                logging.debug("Generating expression {}".format(exp.name))
+                exp.generate(self.compare)
+                logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
+                for depth in self.depth:
+                    for concept in self.depth[depth]:
+                        logging.debug('Prunning with {}'.format(concept.name))
+                        exp.removeRedundant(concept, comparison=self.compare)
+                        #logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
+                exp.toConcept()
+                symbols = exp.getSymbols()
+                concept_n = Grammar.countSymbol(symbols, 'conc')
+                print('{}: {} concepts'.format(exp.name, concept_n))
+                if residue > 0:
+                    filler = None
+                    if concept_n <= max_conc-residue:
+                        filler = symbols
+                        symbols = []
+                        residue += concept_n
+                        concept_n = 0
+                    else:
+                        filler, symbols = Grammar.getNumConcepts(symbols, max_conc-residue)
+                        concept_n = concept_n - (max_conc-residue)
+                        residue = concept_n % max_conc
+                    ModelUtil(filler).write(self.depth[depth][-1].file, type_='a')
+                else:
+                    residue = concept_n % max_conc
+
+                if concept_n == 0: symbol_groups = []
+                elif concept_n <= max_conc: symbol_groups = [symbols]
+                else: symbol_groups = Grammar.splitConcepts(symbols, group_size=max_conc)
+
+                for group in symbol_groups:
+                    name = 'depth_{}_{}'.format(depth, group_n)
+                    newset = KnowledgeSet(name, self.path/'{}.lp'.format(name))
+                    self.depth[depth].append(newset)
+                    ModelUtil(group).write(newset.file)
+                    group_n += 1
+                logging.debug('Left residue of {}'.format(residue))
+                exp.clean()
+            
             if logg:
                 count = 0
-                for conc in self.layers[depth]:
-                    aux = self.countConcepts(conc)
+                for conc in self.depth[depth]:
+                    aux = countFile(conc.file)
                     count += aux
                 print("Total {}: {} concepts.\n".format(depth, count))
 
-    def loadGrammar(self, start_depth, logg=False):
-        simple_sample = self.path/'simple.lp'
-        self.layers[self.simple_code] = [simple_sample]
-
-        role_file = self.path/'roles.lp'
-        self.layers[self.roles] = [role_file]
-        
-        for depth in range(1, start_depth):
-            if logg: print('Depth {}:'.format(depth))
-            self.loadLayer(depth, logg=logg)
-            if logg:
-                count = 0
-                for conc in self.layers[depth]:
-                    aux = self.countConcepts(conc)
-                    count += aux
-                print("Total {}: {} concepts.\n".format(depth, count))
-
-
-    def countConcepts(self, file_name):
+    @staticmethod
+    def countSymbol(symbols, name):
         count = 0
-        with open(str(file_name), 'r') as f:
-            for line in f:
-                if re.match(r'conc\(.*?,\d+?\)\.', line):
-                    count += 1
+        for symbol in symbols:
+            if symbol.name == name:
+                count += 1
+
         return count
+
+def countFile(file_name):
+    count = 0
+    with open(str(file_name), 'r') as f:
+        for line in f:
+            if re.match(r'conc\(.*?,\d+?\)\.', line):
+                count += 1
+    return count
 
 
 if __name__ == "__main__":
@@ -301,6 +451,6 @@ if __name__ == "__main__":
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
     import time
     start = time.time()
-    grammar.loadGrammar(args.start, logg=True)
+    #grammar.loadGrammar(args.start, logg=True)
     grammar.expandGrammar(args.start, args.max_depth, logg=True)
     print("Took {}s.".format(round(time.time()-start, 2)))

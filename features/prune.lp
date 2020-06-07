@@ -7,21 +7,30 @@
 #defined exp/2.
 #defined belong/3.
 #defined cardinality/3.
+#defined keep__/2.
 
-#program prune_exp.
+#program compare_exp.
 
 cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
 
 compare(C1, C2) :- 
     exp(C1, _), exp(C2, _), C2 < C1.
 
+
+
 #program keep_exp.
+
+keep__(exp(C, N)) :- exp(C, N), belong(_, C, _).
+keep__(belong(X, C, S)) :- keep__(exp(C, _)), belong(X, C, S).
+keep__(cardinality(C, N, S)) :- keep__(exp(C, _)), cardinality(C, N, S).
+
+#program prune_exp.
 
 keep__(exp(C, N)) :- exp(C, N), belong(_, C, _), differ(C, D) : compare(C, D).
 keep__(belong(X, C, S)) :- keep__(exp(C, _)), belong(X, C, S).
 keep__(cardinality(C, N, S)) :- keep__(exp(C, _)), cardinality(C, N, S).
 
-#program prune_exp_conc.
+#program compare_exp_conc.
 
 compare(C, D) :-
     exp(C, _), conc(D, _).
@@ -40,3 +49,8 @@ keep__(state(S)) :- state(S).
 
 keep__(role(R, N)) :- role(R, N), belong(_, R, _).
 keep__(belong(XY, R, S)) :- keep__(role(R, N)), belong(XY, R, S).
+
+#program divide.
+
+keep__(belong(X, C, S), G) :- keep__(conc(C, _), G), belong(X, C, S).
+keep__(cardinality(C, N, S), G) :- keep__(conc(C, _), G), cardinality(C, N, S).
