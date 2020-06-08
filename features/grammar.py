@@ -7,7 +7,7 @@ import re
 import argparse
 from pathlib import Path
 from model_util import check_multiple
-from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple
+from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols
 
 class Logic:
     #logicPath = Path(__file__).parent.absolute()
@@ -35,7 +35,11 @@ class Logic:
     @staticmethod
     def exi(depth):
         return ('exi', [depth])
+    @staticmethod
+    def enumerate(start, gsize):
+        return ('enumerate', [start, gsize])
 
+    classify = ('classify', [])
     pruneFile = str(logicPath/'prune.lp')
     keepExp = ('keep_exp', []) 
     compareExp = ('compare_exp', []) 
@@ -93,6 +97,12 @@ class GrammarKnowledge(KnowledgeSet):
         self.isStored = False
         self._symbols = None
 
+    def _solveControl(self, ctl):
+        with ctl.solve(yield_=True) as models:
+            models = list(models)
+            check_multiple(models)
+            self._symbols = models[0].symbols(shown=True)
+
     def _solveProgram(self):
         if self.isGenerated:
             raise RuntimeError("Set {} already generated.".format(self.name))
@@ -102,10 +112,7 @@ class GrammarKnowledge(KnowledgeSet):
         
         ctl.load(Logic.grammarFile)
         ctl.ground([('base', []), self.program])
-        with ctl.solve(yield_=True) as models:
-            models = list(models)
-            check_multiple(models)
-            self._symbols = models[0].symbols(atoms=True)
+        self._solveControl(ctl)
         del(ctl)
 
     def generate(self):          
@@ -121,7 +128,9 @@ class GrammarKnowledge(KnowledgeSet):
         ctl.load(Logic.pruneFile)
         ctl.add('base', [], str(ModelUtil(self._symbols)))
         ctl.ground([('base', []), prune])
-        self._symbols = filter_symbols(ctl, single=True)
+        #self._symbols = filter_symbols(ctl, single=True)
+        self._solveControl(ctl)
+
         del(ctl)
 
     def write(self):
@@ -148,7 +157,8 @@ class ConceptSet(GrammarKnowledge):
         ctl.ground([('base', []), Logic.compareExp])
         comparison.compare(ctl)
         ctl.ground([Logic.pruneExp])
-        self._symbols = filter_symbols(ctl, single=True)
+        #self._symbols = filter_symbols(ctl, single=True)
+        self._solveControl(ctl)
         del(ctl)
         self.isGenerated = True
 
@@ -160,7 +170,8 @@ class ConceptSet(GrammarKnowledge):
         ctl.ground([('base', []), Logic.compareExpConc])
         comparison.compare(ctl)
         ctl.ground([Logic.pruneExp])
-        self._symbols = filter_symbols(ctl, single=True)
+        #self._symbols = filter_symbols(ctl, single=True)
+        self._solveControl(ctl)
         del(ctl)
 
     def toConcept(self):
@@ -172,7 +183,8 @@ class ConceptSet(GrammarKnowledge):
         ctl.load(Logic.pruneFile)
         ctl.add('base', [], str(ModelUtil(self._symbols)))
         ctl.ground([('base', []), Logic.toConcept])
-        self._symbols = filter_symbols(ctl, single=True)
+        #self._symbols = filter_symbols(ctl, single=True)
+        self._solveControl(ctl)
         del(ctl)
 
     def getSymbols(self):
@@ -193,6 +205,7 @@ class Grammar:
         self.roles = GrammarKnowledge('roles', self.path/'roles.lp', Logic.roles, [self.sample])
         self.simpleSample = GrammarKnowledge('simple_sample', self.path/'simple_sample.lp', Logic.base, [self.sample])
         self.depth = {}
+        self.conceptNum = {}
         self.concepts = []
         
         self.compare = Comparison(Logic.logicPath, comp_type=comp_type)
@@ -208,7 +221,6 @@ class Grammar:
 
     def getDepth(self, depth, simple=False, logg=False):
         concept_list = []
-        self.depth[depth] = []
         if depth == 1:
             primitive_file = self.path/'primitive.lp'
             print(str(primitive_file))
@@ -286,6 +298,56 @@ class Grammar:
                 concept_list.append(concept)
         return concept_list
 
+    def addResults(self, depth, symbols, max_conc=50):
+        ctl = clingo.Control(['-n 0'])
+        #ctl.add('base', [], str(ModelUtil(symbols)))
+        add_symbols(ctl, symbols)
+        ctl.load(str(self.path/'aux.lp'))
+        ctl.load(Logic.pruneFile)
+        startSize = (max_conc - (self.conceptNum[depth] % max_conc)) % max_conc
+        logging.debug('Start size {}'.format(startSize))
+        
+        ctl.ground([Logic.base, Logic.enumerate(startSize, max_conc)])
+        group_n = None
+        with ctl.solve(yield_=True) as models:
+            for model in models:
+                symbols = model.symbols(atoms=True)
+                group_n = model.symbols(shown=True)[0].arguments[0].number
+                print('SHOWN', model.symbols(shown=True))
+        del(ctl)
+        ctl = clingo.Control(['-n 0'])
+        #ctl.add('base', [], str(ModelUtil(symbols)))
+        add_symbols(ctl, symbols)
+        ctl.load(Logic.pruneFile)
+        ctl.ground([Logic.base, Logic.classify])
+        concept_n = None
+        for i in range(group_n+1):
+            ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), False)
+        for i in range(group_n+1):
+            ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), True)
+            logging.debug('{}th group'.format(i))
+            with ctl.solve(yield_=True) as models:
+                models = to_model_list(models)
+                check_multiple(models)
+                model = models[0]
+                symbols = model.symbols(shown=True)
+                
+                if i == 0:
+                    concept_n = symbols[0].arguments[0].number
+                    logging.info('{} concepts.'.format(concept_n))
+                elif i == 1:
+                    if startSize > 0:
+                        ModelUtil(symbols).write(self.depth[depth][-1].file, type_='a')
+                        logging.debug('Appending to existing file')
+                else:
+                    name = 'depth_{}_{}'.format(depth, len(self.depth[depth]))
+                    newset = KnowledgeSet(name, self.path/'{}.lp'.format(name))
+                    self.depth[depth].append(newset)
+                    ModelUtil(symbols).write(newset.file)
+                    logging.debug('Created new fil {}'.format(newset.file))
+                ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), False)
+        self.conceptNum[depth] += concept_n
+
     @staticmethod
     def getNumConcepts(symbols, num):
         concepts = []
@@ -355,14 +417,14 @@ class Grammar:
         
         for depth in range(start_depth, max_depth+1):
             if logg: print('Depth {}:'.format(depth))
+            self.depth[depth] = []
+            self.conceptNum[depth] = 0
             expressions = self.getDepth(depth, logg=logg)
-            residue = 0
-            group_n = 0
             print([exp.name for exp in expressions])
             for exp in expressions:
                 logging.debug("Generating expression {}".format(exp.name))
                 exp.generate(self.compare)
-                logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
+                #logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
                 for depth in self.depth:
                     for concept in self.depth[depth]:
                         logging.debug('Prunning with {}'.format(concept.name))
@@ -370,6 +432,8 @@ class Grammar:
                         #logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
                 exp.toConcept()
                 symbols = exp.getSymbols()
+                ModelUtil(symbols).write(str(self.path/'aux.lp'))
+                '''
                 concept_n = Grammar.countSymbol(symbols, 'conc')
                 print('{}: {} concepts'.format(exp.name, concept_n))
                 if residue > 0:
@@ -377,7 +441,7 @@ class Grammar:
                     if concept_n <= max_conc-residue:
                         filler = symbols
                         symbols = []
-                        residue += concept_n
+                        residue = (residue + concept_n) % max_conc
                         concept_n = 0
                     else:
                         filler, symbols = Grammar.getNumConcepts(symbols, max_conc-residue)
@@ -397,7 +461,8 @@ class Grammar:
                     self.depth[depth].append(newset)
                     ModelUtil(group).write(newset.file)
                     group_n += 1
-                logging.debug('Left residue of {}'.format(residue))
+                logging.debug('Left residue of {}'.format(residue))'''
+                self.addResults(depth, symbols, max_conc=max_conc)
                 exp.clean()
             
             if logg:
