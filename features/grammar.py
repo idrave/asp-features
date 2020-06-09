@@ -126,9 +126,8 @@ class GrammarKnowledge(KnowledgeSet):
             raise RuntimeError("Set {} has been stored in a file. Cannot filter".format(self.name))
         ctl = clingo.Control()
         ctl.load(Logic.pruneFile)
-        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        add_symbols(ctl, self._symbols)
         ctl.ground([('base', []), prune])
-        #self._symbols = filter_symbols(ctl, single=True)
         self._solveControl(ctl)
 
         del(ctl)
@@ -143,6 +142,9 @@ class GrammarKnowledge(KnowledgeSet):
         self.isStored = True
         del(self._symbols)
 
+class FileAccess:
+    pass
+
 
 class ConceptSet(GrammarKnowledge):
     def __init__(self, name, file, program, requirements):
@@ -152,25 +154,23 @@ class ConceptSet(GrammarKnowledge):
     def generate(self, comparison: Comparison):
         super(ConceptSet, self)._solveProgram()
         ctl = clingo.Control()
-        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        add_symbols(ctl, self._symbols)
         ctl.load(Logic.pruneFile)
         ctl.ground([('base', []), Logic.compareExp])
         comparison.compare(ctl)
         ctl.ground([Logic.pruneExp])
-        #self._symbols = filter_symbols(ctl, single=True)
         self._solveControl(ctl)
         del(ctl)
         self.isGenerated = True
 
     def removeRedundant(self, concepts, comparison: Comparison):
         ctl = clingo.Control()
-        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        add_symbols(ctl, self._symbols)
         ctl.load(Logic.pruneFile)
         concepts.load(ctl)
         ctl.ground([('base', []), Logic.compareExpConc])
         comparison.compare(ctl)
         ctl.ground([Logic.pruneExp])
-        #self._symbols = filter_symbols(ctl, single=True)
         self._solveControl(ctl)
         del(ctl)
 
@@ -181,9 +181,8 @@ class ConceptSet(GrammarKnowledge):
             raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
         ctl = clingo.Control()
         ctl.load(Logic.pruneFile)
-        ctl.add('base', [], str(ModelUtil(self._symbols)))
+        add_symbols(ctl, self._symbols)
         ctl.ground([('base', []), Logic.toConcept])
-        #self._symbols = filter_symbols(ctl, single=True)
         self._solveControl(ctl)
         del(ctl)
 
@@ -302,21 +301,23 @@ class Grammar:
         ctl = clingo.Control(['-n 0'])
         #ctl.add('base', [], str(ModelUtil(symbols)))
         add_symbols(ctl, symbols)
-        ctl.load(str(self.path/'aux.lp'))
         ctl.load(Logic.pruneFile)
         startSize = (max_conc - (self.conceptNum[depth] % max_conc)) % max_conc
         logging.debug('Start size {}'.format(startSize))
         
         ctl.ground([Logic.base, Logic.enumerate(startSize, max_conc)])
         group_n = None
+        #if depth == 3:
+        #    ModelUtil(symbols).write(str(self.path/'aux.lp'))
         with ctl.solve(yield_=True) as models:
+            models = to_model_list(models)
+            check_multiple(models)
             for model in models:
                 symbols = model.symbols(atoms=True)
                 group_n = model.symbols(shown=True)[0].arguments[0].number
                 print('SHOWN', model.symbols(shown=True))
         del(ctl)
         ctl = clingo.Control(['-n 0'])
-        #ctl.add('base', [], str(ModelUtil(symbols)))
         add_symbols(ctl, symbols)
         ctl.load(Logic.pruneFile)
         ctl.ground([Logic.base, Logic.classify])
@@ -420,6 +421,8 @@ class Grammar:
             self.depth[depth] = []
             self.conceptNum[depth] = 0
             expressions = self.getDepth(depth, logg=logg)
+            residue = 0
+            group_n = 0
             print([exp.name for exp in expressions])
             for exp in expressions:
                 logging.debug("Generating expression {}".format(exp.name))
@@ -432,7 +435,6 @@ class Grammar:
                         #logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
                 exp.toConcept()
                 symbols = exp.getSymbols()
-                ModelUtil(symbols).write(str(self.path/'aux.lp'))
                 '''
                 concept_n = Grammar.countSymbol(symbols, 'conc')
                 print('{}: {} concepts'.format(exp.name, concept_n))

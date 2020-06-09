@@ -13,7 +13,8 @@ def add_symbols(ctl: clingo.Control, symbols):
     with ctl.backend() as backend:
         for symbol in symbols:
             atom = backend.add_atom(symbol)
-            backend.add_rule([atom], [])
+            backend.add_rule([atom], [], False)
+    ctl.cleanup()
 
 def load_symbols(file, program="base", prog_args=[]):
     ctl = clingo.Control()

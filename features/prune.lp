@@ -2,6 +2,7 @@
 %prune_new
 %prune_pool
 %prune_candidate
+
 #defined keep__/1.
 #defined conc/2.
 #defined exp/2.
@@ -77,15 +78,18 @@ count(N) :- N = #count{C : conc(C, _)}.
 models(0) :- count(0).
 models(1) :- count(N), N < start, N > 0.
 models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
-prev(C, D) :- conc(C, _), conc(D, _), C < D, E < C : conc(E, _), E < D, E != C.
-
-ord(C, 0) :- conc(C, _), C < D : conc(D, _), C != D.
-ord(C, P+1) :- ord(D, P), prev(D, C).
+%prev(C, D) :- conc(C, _), conc(D, _), C < D, E < C : conc(E, _), E < D, E != C.
+%st(start).
+%ord(C, 0) :- conc(C, _), C < D : conc(D, _), C != D.
+%ord(C, P+1) :- ord(D, P), prev(D, C).
+ord(C, N) :- conc(C, _), N = #count{D : D < C, conc(D, _)}.
 
 group(C, 1) :- ord(C, N), N < start.
 group(C, (N-start)/gsize+2) :- ord(C, N), N >= start.
-
+%#show count(N) : count(N).
 #show models(N) : models(N).
+%#show conc(C, N) : conc(C, N).
+
 #program classify.
 #external model(X) : X=0..N, models(N).
 
@@ -94,5 +98,4 @@ keep(conc(C, M)) :- model(N), group(C, N), conc(C, M).
 #show conc(C, M) : keep(conc(C, M)).
 #show belong(X, C, S) : keep(conc(C, _)), belong(X, C, S).
 #show cardinality(C, N, S) : keep(conc(C, _)), cardinality(C, N, S).
-
 
