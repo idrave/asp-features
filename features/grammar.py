@@ -5,50 +5,12 @@ import logging
 import pathlib
 import re
 import argparse
+import os
 from pathlib import Path
 from model_util import check_multiple
 from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols
-
-class Logic:
-    #logicPath = Path(__file__).parent.absolute()
-    logicPath = Path('/home/ivan/Documents/ai/features/features')
-    grammarFile = str(logicPath/'concept.lp')
-    base = ('base', [])
-    @staticmethod
-    def primitive(depth):
-        return ('primitive', [depth])
-    
-    roles = ('roles', [])
-
-    @staticmethod
-    def negation(depth):
-        return ('negation', [depth])
-    @staticmethod
-    def equalRole(depth):
-        return ('equal_role', [depth])
-    @staticmethod
-    def conjunction(depth, in1, in2):
-        return ('conjunction', [depth, in1, in2])
-    @staticmethod
-    def uni(depth):
-        return ('uni', [depth])
-    @staticmethod
-    def exi(depth):
-        return ('exi', [depth])
-    @staticmethod
-    def enumerate(start, gsize):
-        return ('enumerate', [start, gsize])
-
-    classify = ('classify', [])
-    pruneFile = str(logicPath/'prune.lp')
-    keepExp = ('keep_exp', []) 
-    compareExp = ('compare_exp', []) 
-    pruneExp = ('prune_exp', [])
-    compareExpConc = ('compare_exp_conc', []) 
-    toConcept = ('exp2conc', [])
-    keepRoles = ('get_roles', [])
-    simplifySample = ('simplify', [])
-    divide = ('divide', [])
+from features.logic import Logic
+from features.knowledge import GrammarKnowledge, KnowledgeSet, ConceptSet, ClingoFile, PickleFile, FileCreator
 
 class Comparison:
     def __init__(self, path, comp_type='standard'):
@@ -79,134 +41,15 @@ class Comparison:
         ctl.ground([('optimal_differ_end', [])])
         ctl.solve()
 
-class KnowledgeSet:
-    def __init__(self, name, file):
-        self.name = name
-        self.file = str(file)
-
-    def load(self, ctl):
-        ctl.load(self.file)
-
-class GrammarKnowledge(KnowledgeSet):
-    def __init__(self, name, file, program, requirements):
-        super(GrammarKnowledge, self).__init__(name, file)
-        
-        self.program = program
-        self.requirements = requirements
-        self.isGenerated = False
-        self.isStored = False
-        self._symbols = None
-
-    def _solveControl(self, ctl):
-        with ctl.solve(yield_=True) as models:
-            models = list(models)
-            check_multiple(models)
-            self._symbols = models[0].symbols(shown=True)
-
-    def _solveProgram(self):
-        if self.isGenerated:
-            raise RuntimeError("Set {} already generated.".format(self.name))
-        ctl = clingo.Control()
-        for req in self.requirements:
-            req.load(ctl)
-        
-        ctl.load(Logic.grammarFile)
-        ctl.ground([('base', []), self.program])
-        self._solveControl(ctl)
-        del(ctl)
-
-    def generate(self):          
-        self._solveProgram()
-        self.isGenerated = True
-        
-    def filter(self, prune):
-        if not self.isGenerated:
-            raise RuntimeError("Set {} has not been generated. Cannot filter".format(self.name))
-        if self.isStored:
-            raise RuntimeError("Set {} has been stored in a file. Cannot filter".format(self.name))
-        ctl = clingo.Control()
-        ctl.load(Logic.pruneFile)
-        add_symbols(ctl, self._symbols)
-        ctl.ground([('base', []), prune])
-        self._solveControl(ctl)
-
-        del(ctl)
-
-    def write(self):
-        if not self.isGenerated:
-            raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
-        if self.isStored:
-            raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
-        with open(self.file, 'w') as file:
-            file.write(str(ModelUtil(self._symbols)))
-        self.isStored = True
-        del(self._symbols)
-
-class FileAccess:
-    pass
-
-
-class ConceptSet(GrammarKnowledge):
-    def __init__(self, name, file, program, requirements):
-        super(ConceptSet, self).__init__(name, file, program, requirements)
-        self.isConcept = False
-
-    def generate(self, comparison: Comparison):
-        super(ConceptSet, self)._solveProgram()
-        ctl = clingo.Control()
-        add_symbols(ctl, self._symbols)
-        ctl.load(Logic.pruneFile)
-        ctl.ground([('base', []), Logic.compareExp])
-        comparison.compare(ctl)
-        ctl.ground([Logic.pruneExp])
-        self._solveControl(ctl)
-        del(ctl)
-        self.isGenerated = True
-
-    def removeRedundant(self, concepts, comparison: Comparison):
-        ctl = clingo.Control()
-        add_symbols(ctl, self._symbols)
-        ctl.load(Logic.pruneFile)
-        concepts.load(ctl)
-        ctl.ground([('base', []), Logic.compareExpConc])
-        comparison.compare(ctl)
-        ctl.ground([Logic.pruneExp])
-        self._solveControl(ctl)
-        del(ctl)
-
-    def toConcept(self):
-        if not self.isGenerated:
-            raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
-        if self.isStored:
-            raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
-        ctl = clingo.Control()
-        ctl.load(Logic.pruneFile)
-        add_symbols(ctl, self._symbols)
-        ctl.ground([('base', []), Logic.toConcept])
-        self._solveControl(ctl)
-        del(ctl)
-
-    def getSymbols(self):
-        return self._symbols
-
-    def clean(self):
-        del(self._symbols)
-
-    def write(self):
-        raise RuntimeError("OHNO")
-
 
 class Grammar:
     def __init__(self, sample, path, comp_type='standard'):
         self.samplePath = Path(sample)
         self.path = Path(path)
-        self.sample = KnowledgeSet('sample', self.samplePath)
-        self.roles = GrammarKnowledge('roles', self.path/'roles.lp', Logic.roles, [self.sample])
-        self.simpleSample = GrammarKnowledge('simple_sample', self.path/'simple_sample.lp', Logic.base, [self.sample])
         self.depth = {}
         self.conceptNum = {}
         self.concepts = []
-        
+        self.sample = KnowledgeSet('sample', self.samplePath)
         self.compare = Comparison(Logic.logicPath, comp_type=comp_type)
     
     def createDir(self):
@@ -218,17 +61,32 @@ class Grammar:
                 print(repr(e))
                 sys.exit()
 
-    def getDepth(self, depth, simple=False, logg=False):
+    def loadProgress(self, depth):
+        if depth < 1: return
+        directory = os.listdir(self.path)
+        self.roles = KnowledgeSet('roles', self.path/'roles.lp')
+        self.simpleSample = KnowledgeSet('simple_sample', self.path/'simple_sample.lp')
+        for elem in directory:
+            match = re.match(r'depth_(\d*)_(\d*)', elem)
+            if match:
+                dep = int(match.group(1))
+                if dep <= depth:
+                    logging.debug('Found file: {}'.format(match.group(0)))
+                    if dep not in self.depth:
+                        self.depth[dep] = []
+                    kn_file =  self.path/elem
+                    self.depth[dep].append(KnowledgeSet(match.group(0), kn_file))
+
+    def getDepth(self, depth, simple=False, logg=False, type_='clingo'):
         concept_list = []
         if depth == 1:
-            primitive_file = self.path/'primitive.lp'
-            print(str(primitive_file))
+            primitive_file =  self.path/'primitive.lp'
             concept = ConceptSet('primitive', primitive_file, Logic.primitive(depth),[self.sample])
             concept_list.append(concept)
             return concept_list
 
         if depth == 2:
-            negation_file = self.path/'negation.lp'
+            negation_file =  self.path/'negation.lp'
             concept = ConceptSet(
                 'negation', negation_file, Logic.negation(depth),
                 [self.simpleSample] + self.depth[1]
@@ -237,7 +95,7 @@ class Grammar:
             return concept_list
 
         if depth == 3:
-            equalrole_file = self.path/'equal_role.lp'
+            equalrole_file =  self.path/'equal_role.lp'
             concept = ConceptSet(
                 'equal_role', equalrole_file, Logic.equalRole(depth),
                 [self.simpleSample, self.roles]
@@ -245,61 +103,35 @@ class Grammar:
             concept_list.append(concept)
 
         for i in range(1,(depth+1)//2):
-            if simple:
-                name = 'conjunction_{}_{}'.format(depth, i)
-                conjunction_file = self.path/'{}.lp'.format(name)
-                concept = ConceptSet(
-                    name, conjunction_file, Logic.conjunction(depth, i, depth-i-1),
-                    [self.simpleSample] + self.depth[i] + self.depth[depth-i-1]
-                )
-                concept_list.append(concept)
-            else:
-                for concept1 in self.depth[i]:
-                    for concept2 in self.depth[depth-i-1]:
-                        name = 'conjunction_{}_{}_{}'.format(depth, concept1.name, concept2.name)
-                        conjunction_file = self.path/'{}.lp'.format(name)
-                        concept = ConceptSet(
-                            name, conjunction_file, Logic.conjunction(depth, i, depth-i-1),
-                            [self.simpleSample, concept1, concept2]
-                        )
-                        concept_list.append(concept)
+            for concept1 in self.depth[i]:
+                for concept2 in self.depth[depth-i-1]:
+                    name = 'conjunction_{}_{}_{}'.format(depth, concept1.name, concept2.name)
+                    conjunction_file =  self.path/'{}.lp'.format(name)
+                    concept = ConceptSet(
+                        name, conjunction_file, Logic.conjunction(depth, i, depth-i-1),
+                        [self.simpleSample, concept1, concept2]
+                    )
+                    concept_list.append(concept)
 
-        if simple:
-            name = 'exi_{}'.format(depth)
-            exi_file = self.path/'{}.lp'.format(name)
+        for conc in self.depth[depth-2]:
+            name = 'exi_{}_{}'.format(depth, conc.name)
+            exi_file =  self.path/'{}.lp'.format(name)
             concept = ConceptSet(
                 name, exi_file, Logic.exi(depth),
-                [self.simpleSample, self.roles] + self.depth[depth-2]
+                [self.simpleSample, self.roles, conc]
             )
             concept_list.append(concept)
-            name = 'uni_{}'.format(depth)
-            uni_file = self.path/'{}.lp'.format(name)
+            name = 'uni_{}_{}'.format(depth, conc.name)
+            uni_file =  self.path/'{}.lp'.format(name)
             concept = ConceptSet(
                 name, uni_file, Logic.uni(depth),
-                [self.simpleSample, self.roles] + self.depth[depth-2]
+                [self.simpleSample, self.roles, conc]
             )
             concept_list.append(concept)
-        else:
-            for conc in self.depth[depth-2]:
-                name = 'exi_{}_{}'.format(depth, conc.name)
-                exi_file = self.path/'{}.lp'.format(name)
-                concept = ConceptSet(
-                    name, exi_file, Logic.exi(depth),
-                    [self.simpleSample, self.roles, conc]
-                )
-                concept_list.append(concept)
-                name = 'uni_{}_{}'.format(depth, conc.name)
-                uni_file = self.path/'{}.lp'.format(name)
-                concept = ConceptSet(
-                    name, uni_file, Logic.uni(depth),
-                    [self.simpleSample, self.roles, conc]
-                )
-                concept_list.append(concept)
         return concept_list
 
     def addResults(self, depth, symbols, max_conc=50):
         ctl = clingo.Control(['-n 0'])
-        #ctl.add('base', [], str(ModelUtil(symbols)))
         add_symbols(ctl, symbols)
         ctl.load(Logic.pruneFile)
         startSize = (max_conc - (self.conceptNum[depth] % max_conc)) % max_conc
@@ -307,8 +139,7 @@ class Grammar:
         
         ctl.ground([Logic.base, Logic.enumerate(startSize, max_conc)])
         group_n = None
-        #if depth == 3:
-        #    ModelUtil(symbols).write(str(self.path/'aux.lp'))
+
         with ctl.solve(yield_=True) as models:
             models = to_model_list(models)
             check_multiple(models)
@@ -317,6 +148,7 @@ class Grammar:
                 group_n = model.symbols(shown=True)[0].arguments[0].number
                 print('SHOWN', model.symbols(shown=True))
         del(ctl)
+
         ctl = clingo.Control(['-n 0'])
         add_symbols(ctl, symbols)
         ctl.load(Logic.pruneFile)
@@ -345,84 +177,32 @@ class Grammar:
                     newset = KnowledgeSet(name, self.path/'{}.lp'.format(name))
                     self.depth[depth].append(newset)
                     ModelUtil(symbols).write(newset.file)
-                    logging.debug('Created new fil {}'.format(newset.file))
+                    logging.debug('Created new file {}'.format(newset.file))
                 ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), False)
         self.conceptNum[depth] += concept_n
 
-    @staticmethod
-    def getNumConcepts(symbols, num):
-        concepts = []
-        count = 0
-        for symbol in symbols:
-            if symbol.name == 'conc':
-                if count < num:
-                    concepts.append(clingo.Function('keep__', [symbol, 0]))
-                    count += 1
-                else:
-                    concepts.append(clingo.Function('keep__', [symbol, 1]))
-        ctl = clingo.Control()
-        ctl.load(Logic.pruneFile)
-        ctl.add('base', [], str(ModelUtil(concepts + symbols)))
-        ctl.ground([('base', []), Logic.divide])
-        result = Grammar.getSymbolGroups(ctl, 2)
-        del(ctl)
-        return tuple(result)
-
-    @staticmethod
-    def splitConcepts(symbols, group_size):
-        concepts = []
-        groups = 0
-        count = 0
-        for symbol in symbols:
-            if symbol.name == 'conc':
-                concepts.append(clingo.Function('keep__', [symbol, groups]))
-                #print(str(clingo.Function('keep__', [symbol, groups])))
-                count += 1
-                if count == group_size:
-                    count = 0
-                    groups += 1
-        ctl = clingo.Control()
-        ctl.load(Logic.pruneFile)
-        ctl.add('base', [], str(ModelUtil(concepts + symbols)))
-        ctl.ground([('base', []), Logic.divide])
-        result = Grammar.getSymbolGroups(ctl, groups+1)
-        del(ctl)
-        return result
-
-    @staticmethod
-    def getSymbolGroups(ctl, groups):
-        result = [[] for i in range(groups)]
-        with ctl.solve(yield_=True) as models:
-            models = list(models)
-            check_multiple(models)
-            symbols = models[0].symbols(atoms=True)
-            #print(len(symbols))
-            for symbol in symbols:
-                if symbol.name == 'keep__':
-                    gid = symbol.arguments[1]
-                    #print(gid)
-                    result[gid.number].append(symbol.arguments[0])
-        return result
-
-
-    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50):
+    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50, type_='clingo'):
         logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
+        
         if start_depth <= 1:
             self.createDir()
+            self.roles = GrammarKnowledge('roles',  self.path/'roles.lp', Logic.roles, [self.sample])
+            self.simpleSample = GrammarKnowledge('simple_sample',  self.path/'simple_sample.lp', Logic.base, [self.sample])
             self.simpleSample.generate()
             self.simpleSample.filter(Logic.simplifySample)
             self.simpleSample.write()
             self.roles.generate()
             self.roles.filter(Logic.keepRoles)
             self.roles.write()
+        else:
+            self.loadProgress(start_depth-1)
         
         for depth in range(start_depth, max_depth+1):
             if logg: print('Depth {}:'.format(depth))
             self.depth[depth] = []
             self.conceptNum[depth] = 0
             expressions = self.getDepth(depth, logg=logg)
-            residue = 0
-            group_n = 0
+
             print([exp.name for exp in expressions])
             for exp in expressions:
                 logging.debug("Generating expression {}".format(exp.name))
@@ -435,35 +215,6 @@ class Grammar:
                         #logging.debug('Expression # {}'.format(Grammar.countSymbol(exp.getSymbols(), 'exp')))
                 exp.toConcept()
                 symbols = exp.getSymbols()
-                '''
-                concept_n = Grammar.countSymbol(symbols, 'conc')
-                print('{}: {} concepts'.format(exp.name, concept_n))
-                if residue > 0:
-                    filler = None
-                    if concept_n <= max_conc-residue:
-                        filler = symbols
-                        symbols = []
-                        residue = (residue + concept_n) % max_conc
-                        concept_n = 0
-                    else:
-                        filler, symbols = Grammar.getNumConcepts(symbols, max_conc-residue)
-                        concept_n = concept_n - (max_conc-residue)
-                        residue = concept_n % max_conc
-                    ModelUtil(filler).write(self.depth[depth][-1].file, type_='a')
-                else:
-                    residue = concept_n % max_conc
-
-                if concept_n == 0: symbol_groups = []
-                elif concept_n <= max_conc: symbol_groups = [symbols]
-                else: symbol_groups = Grammar.splitConcepts(symbols, group_size=max_conc)
-
-                for group in symbol_groups:
-                    name = 'depth_{}_{}'.format(depth, group_n)
-                    newset = KnowledgeSet(name, self.path/'{}.lp'.format(name))
-                    self.depth[depth].append(newset)
-                    ModelUtil(group).write(newset.file)
-                    group_n += 1
-                logging.debug('Left residue of {}'.format(residue))'''
                 self.addResults(depth, symbols, max_conc=max_conc)
                 exp.clean()
             
@@ -518,6 +269,5 @@ if __name__ == "__main__":
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
     import time
     start = time.time()
-    #grammar.loadGrammar(args.start, logg=True)
     grammar.expandGrammar(args.start, args.max_depth, logg=True)
     print("Took {}s.".format(round(time.time()-start, 2)))
