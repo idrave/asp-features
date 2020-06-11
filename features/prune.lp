@@ -1,8 +1,3 @@
-%prune_exp
-%prune_new
-%prune_pool
-%prune_candidate
-
 #defined keep__/1.
 #defined conc/2.
 #defined exp/2.
@@ -18,18 +13,30 @@
 #defined const/1.
 #defined state/1.
 #defined model/1.
+#defined qualValue/3.
+#defined delta/4.
+#defined cost/2.
+#defined num/1.
+#defined bool/1.
+#defined prefeature/1.
+#defined feature/1.
 #show.
 
-#program compare_exp.
+#program cardinality.
 
-cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
+cardinality(C, N, S) :- conc(C, _), state(S), N = #count{X : belong(X, C, S)}.
+#show conc(C, N) : conc(C, N).
+#show belong(X, C, S) : conc(C, _), belong(X, C, S).
+#show cardinality(C, N, S) : conc(C, _), cardinality(C, N, S).
+
+#program compare_exp.
 
 compare(C1, C2) :- 
     exp(C1, _), exp(C2, _), C2 < C1.
 
-
-
 #program keep_exp.
+
+cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
 
 keep(exp(C, N)) :- exp(C, N), belong(_, C, _).
 #show exp(C, N) : keep(exp(C, N)).
@@ -62,15 +69,15 @@ keep(conc(C, N)) :- exp(C, N), belong(_, C, _).
 #show const(C) : const(C).
 #show state(S) : state(S).
 
+#program transitions.
+
+#show transition(S, T) : transition(S, T).
+
 #program get_roles.
 
 #show role(R, N) : role(R, N).
 #show belong(XY, R, S) : role(R, N), belong(XY, R, S).
 
-#program divide.
-
-keep__(belong(X, C, S), G) :- keep__(conc(C, _), G), belong(X, C, S).
-keep__(cardinality(C, N, S), G) :- keep__(conc(C, _), G), cardinality(C, N, S).
 
 #program enumerate(start, gsize).
 
@@ -78,17 +85,11 @@ count(N) :- N = #count{C : conc(C, _)}.
 models(0) :- count(0).
 models(1) :- count(N), N < start, N > 0.
 models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
-%prev(C, D) :- conc(C, _), conc(D, _), C < D, E < C : conc(E, _), E < D, E != C.
-%st(start).
-%ord(C, 0) :- conc(C, _), C < D : conc(D, _), C != D.
-%ord(C, P+1) :- ord(D, P), prev(D, C).
 ord(C, N) :- conc(C, _), N = #count{D : D < C, conc(D, _)}.
 
 group(C, 1) :- ord(C, N), N < start.
 group(C, (N-start)/gsize+2) :- ord(C, N), N >= start.
-%#show count(N) : count(N).
 #show models(N) : models(N).
-%#show conc(C, N) : conc(C, N).
 
 #program classify.
 #external model(X) : X=0..N, models(N).
@@ -99,3 +100,77 @@ keep(conc(C, M)) :- model(N), group(C, N), conc(C, M).
 #show belong(X, C, S) : keep(conc(C, _)), belong(X, C, S).
 #show cardinality(C, N, S) : keep(conc(C, _)), cardinality(C, N, S).
 
+#program enumerate_exp(start, gsize).
+
+count(N) :- N = #count{C : exp(C, _)}.
+models(0) :- count(0).
+models(1) :- count(N), N < start, N > 0.
+models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
+ord(C, N) :- exp(C, _), N = #count{D : D < C, exp(D, _)}.
+
+group(C, 1) :- ord(C, N), N < start.
+group(C, (N-start)/gsize+2) :- ord(C, N), N >= start.
+#show models(N) : models(N).
+
+#program classify_exp.
+#external model(X) : X=0..N, models(N).
+
+#show count(N) : model(0), count(N).
+keep(exp(C, M)) :- model(N), group(C, N), exp(C, M).
+#show exp(C, M) : keep(exp(C, M)).
+#show belong(X, C, S) : keep(exp(C, _)), belong(X, C, S).
+#show cardinality(C, N, S) : keep(exp(C, _)), cardinality(C, N, S).
+
+%%%%%%%%%%%% Features %%%%%%%%%%%% 
+
+#program compare_prefeature.
+
+compare(F1, F2) :- prefeature(F1), prefeature(F2), F1 < F2.
+
+#program compare_feature.
+
+compare(F1, F2) :- prefeature(F1), feature(F2).
+
+#program prune_feature.
+
+keep(prefeature(F)) :- prefeature(F), differ(F, G) : compare(F, G).
+
+#show bool(F) : bool(F), keep(prefeature(F)).
+#show num(F) : num(F), keep(prefeature(F)).
+#show prefeature(F) : keep(prefeature(F)).
+#show cost(F, N) : cost(F, N),keep(prefeature(F)).
+#show qualValue(F, V, S) : qualValue(F, V, S),keep(prefeature(F)).
+#show delta(S, T, F, V) : delta(S, T, F, V),keep(prefeature(F)).
+
+#program to_feature.
+
+#show feature(F) : prefeature(F).
+#show bool(F) : bool(F), prefeature(F).
+#show num(F) : num(F), prefeature(F).
+#show cost(F, N) : cost(F, N),prefeature(F).
+#show qualValue(F, V, S) : qualValue(F, V, S),prefeature(F).
+#show delta(S, T, F, V) : delta(S, T, F, V),prefeature(F).
+
+#program enumerate_feat(start, gsize).
+
+count(N) :- N = #count{F : feature(F)}.
+models(0) :- count(0).
+models(1) :- count(N), N < start, N > 0.
+models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
+ord(F, N) :- feature(F), N = #count{G : G < F, feature(G)}.
+
+group(F, 1) :- ord(F, N), N < start.
+group(F, (N-start)/gsize+2) :- ord(F, N), N >= start.
+#show models(N) : models(N).
+
+#program classify_feat.
+#external model(X) : X=0..N, models(N).
+
+#show count(N) : model(0), count(N).
+keep(feature(F)) :- model(N), group(F, N), feature(F).
+#show feature(F) : keep(feature(F)).
+#show bool(F) : bool(F), keep(feature(F)).
+#show num(F) : num(F), keep(feature(F)).
+#show cost(F, N) : cost(F, N),keep(feature(F)).
+#show qualValue(F, V, S) : qualValue(F, V, S),keep(feature(F)).
+#show delta(S, T, F, V) : delta(S, T, F, V),keep(feature(F)).

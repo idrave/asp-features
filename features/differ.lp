@@ -1,6 +1,8 @@
 #defined state/1.
 #defined compare/2.
 #defined const/1.
+#defined qualValue/3.
+#defined delta/4.
 
 #program fast_differ.
 
@@ -28,3 +30,7 @@ differ(C1, C2) :-   equiv_card(C1, C2),
         
 differ(C1, C2) :-   equiv_card(C1, C2),
                     not belong(X, C1, S), belong(X, C2, S).
+
+#program feature_differ.
+differ(F, G) :- compare(F, G), qualValue(F, V, S), not qualValue(G, V, S).
+differ(F, G) :- compare(F, G), delta(S, T, F, V), not delta(S, T, G, V).

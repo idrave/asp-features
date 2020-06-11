@@ -1,10 +1,12 @@
 import clingo
-from model_util import add_symbols, ModelUtil, check_multiple
+from model_util import add_symbols, ModelUtil, check_multiple, splitSymbols
 from features.logic import Logic
+from pathlib import Path
 import pickle
 import re
 from enum import Enum
-
+import logging
+import os
 
 class ClingoFile:
     def __init__(self, filename):
@@ -60,15 +62,16 @@ class FileCreator:
 class KnowledgeSet:
     def __init__(self, name, file):
         self.name = name
-        self.file = file
+        self.file = str(file)
 
     def load(self, ctl):
-        self.file.load(ctl)
+        ctl.load(self.file)
 
 class GrammarKnowledge(KnowledgeSet):
-    def __init__(self, name, file, program, requirements):
+    def __init__(self, name, file, program, requirements, gen_file = Logic.grammarFile):
         super(GrammarKnowledge, self).__init__(name, file)
         
+        self.genFile = gen_file
         self.program = program
         self.requirements = requirements
         self.isGenerated = False
@@ -88,7 +91,7 @@ class GrammarKnowledge(KnowledgeSet):
         for req in self.requirements:
             req.load(ctl)
         
-        ctl.load(Logic.grammarFile)
+        ctl.load(self.genFile)
         ctl.ground([('base', []), self.program])
         self._solveControl(ctl)
         del(ctl)
@@ -96,44 +99,56 @@ class GrammarKnowledge(KnowledgeSet):
     def generate(self):          
         self._solveProgram()
         self.isGenerated = True
-        
-    def filter(self, prune):
-        if not self.isGenerated:
-            raise RuntimeError("Set {} has not been generated. Cannot filter".format(self.name))
-        if self.isStored:
-            raise RuntimeError("Set {} has been stored in a file. Cannot filter".format(self.name))
+
+    def filter(self, clingo_file, prune):
         ctl = clingo.Control()
-        ctl.load(Logic.pruneFile)
+        ctl.load(clingo_file)
         add_symbols(ctl, self._symbols)
         ctl.ground([('base', []), prune])
         self._solveControl(ctl)
 
         del(ctl)
 
+    def getSymbols(self):
+        return self._symbols
+
+    def clean(self):
+        del self._symbols[:]
+
     def write(self, option = 'w'):
         if not self.isGenerated:
             raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
         if self.isStored:
             raise RuntimeError("Set {} has been stored in a file. Cannot overwrite".format(self.name))
-        self.file.write(self._symbols, option=option)
+        ModelUtil(self._symbols).write(self.file, type_=option)
         self.isStored = True
-        del(self._symbols)
+        self.clean()
 
-
-class ConceptSet(GrammarKnowledge):
-    def __init__(self, name, file, program, requirements):
-        super(ConceptSet, self).__init__(name, file, program, requirements)
+class PruneableSet(GrammarKnowledge):
+    def __init__(self, name, file, program, requirements, keep_f, keep_p, prune, final, cin, cout, gen_file=Logic.grammarFile):
+        super(PruneableSet, self).__init__(name, file, program, requirements, gen_file=gen_file)
         self.isConcept = False
+        self.expCount = 0
+        self.keepFile = keep_f
+        self.keepProg = keep_p
+        self.pruneProg = prune
+        self.finalProg = final
+        self.compareIn = cin
+        self.compareOut = cout
 
     def generate(self, comparison):
-        super(ConceptSet, self)._solveProgram()
+        super(PruneableSet, self)._solveProgram()
+
+        self.filter(self.keepFile, self.keepProg)
+
         ctl = clingo.Control()
         add_symbols(ctl, self._symbols)
         ctl.load(Logic.pruneFile)
-        ctl.ground([('base', []), Logic.compareExp])
+        ctl.ground([('base', []), self.compareIn])
         comparison.compare(ctl)
-        ctl.ground([Logic.pruneExp])
+        ctl.ground([self.pruneProg])
         self._solveControl(ctl)
+
         del(ctl)
         self.isGenerated = True
 
@@ -142,13 +157,13 @@ class ConceptSet(GrammarKnowledge):
         add_symbols(ctl, self._symbols)
         ctl.load(Logic.pruneFile)
         concepts.load(ctl)
-        ctl.ground([('base', []), Logic.compareExpConc])
+        ctl.ground([('base', []), self.compareOut])
         comparison.compare(ctl)
-        ctl.ground([Logic.pruneExp])
+        ctl.ground([self.pruneProg])
         self._solveControl(ctl)
         del(ctl)
 
-    def toConcept(self):
+    def toFinal(self):
         if not self.isGenerated:
             raise RuntimeError("Set {} has not been generated. Cannot write to file".format(self.name))
         if self.isStored:
@@ -156,15 +171,23 @@ class ConceptSet(GrammarKnowledge):
         ctl = clingo.Control()
         ctl.load(Logic.pruneFile)
         add_symbols(ctl, self._symbols)
-        ctl.ground([('base', []), Logic.toConcept])
+        ctl.ground([('base', []), self.finalProg])
         self._solveControl(ctl)
         del(ctl)
-
-    def getSymbols(self):
-        return self._symbols
-
-    def clean(self):
-        del(self._symbols)
-
+    
     def write(self):
         raise RuntimeError("OHNO")
+
+class ConceptSet(PruneableSet):
+    def __init__(self, name, file, program, requirements):
+        super(ConceptSet, self).__init__(
+            name, file, program, requirements, Logic.pruneFile, Logic.keepExp, Logic.pruneExp,
+            Logic.toConcept, Logic.compareExp, Logic.compareExpConc)
+
+class FeatureSet(PruneableSet):
+    def __init__(self, name, file, program, requirements):
+        super(FeatureSet, self).__init__(
+            name, file, program, requirements, Logic.featureFile, Logic.processFeat, Logic.pruneFeature,
+            Logic.toFeature, Logic.comparePreFeature, Logic.compareFeature, gen_file=Logic.featureFile)
+        
+

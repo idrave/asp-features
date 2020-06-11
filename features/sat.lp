@@ -9,6 +9,7 @@
 %cost(F, N)             Feature F has cost N
 
 %A state is relevant if it is part of a relevant transition
+%*
 #program sat.
 relevant(S) :- relevant(S, _).
 relevant(S) :- relevant(_, S).
@@ -24,7 +25,7 @@ delta(S1, S2, F, minus) :- transition(S1, S2), bool(F), hasValue(F, true, S1), h
 delta(S1, S2, F, inc) :- transition(S1, S2), num(F), hasValue(F, M, S1), hasValue(F, N, S2), M < N.
 delta(S1, S2, F, dec) :- transition(S1, S2), num(F), hasValue(F, M, S1), hasValue(F, N, S2), M > N.
 delta(S1, S2, F, null) :- transition(S1, S2), feature(F), hasValue(F, M, S1), hasValue(F, M, S2).
-
+*%
 % Rule (1). Define d1
 d1(S, T) :- feature(F), selected(F), relevant(S), state(T),
             qualValue(F, A, S), qualValue(F, B, T), not A = B.

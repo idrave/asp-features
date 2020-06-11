@@ -4,6 +4,7 @@ class Logic:
     #logicPath = Path(__file__).parent.absolute()
     logicPath = Path('/home/ivan/Documents/ai/features/features')
     grammarFile = str(logicPath/'concept.lp')
+    featureFile = str(logicPath/'features.lp')
     base = ('base', [])
     @staticmethod
     def primitive(depth):
@@ -29,8 +30,12 @@ class Logic:
     @staticmethod
     def enumerate(start, gsize):
         return ('enumerate', [start, gsize])
+    @staticmethod
+    def enumerateExp(start, gsize):
+        return ('enumerate_exp', [start, gsize])
 
     classify = ('classify', [])
+    classifyExp = ('classify_exp', [])
     pruneFile = str(logicPath/'prune.lp')
     keepExp = ('keep_exp', []) 
     compareExp = ('compare_exp', []) 
@@ -40,3 +45,21 @@ class Logic:
     keepRoles = ('get_roles', [])
     simplifySample = ('simplify', [])
     divide = ('divide', [])
+
+    primitiveFeature = ('primitiveFeature', [])
+    conceptFeature = ('conceptFeature', [])
+    @staticmethod
+    def distFeature(k):
+        return ('distFeature', [k])
+
+    transitions = ('transitions', [])
+    processFeat = ('feature', [])
+    comparePreFeature = ('compare_prefeature', [])
+    compareFeature = ('compare_feature', [])
+    pruneFeature = ('prune_feature', [])
+    toFeature = ('to_feature', [])
+    @staticmethod
+    def enumerateFeat(start, gsize):
+        return ('enumerate_feat', [start, gsize])
+    classifyFeat = ('classify_feat', [])
+    

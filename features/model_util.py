@@ -1,5 +1,7 @@
 import clingo
-
+from features.logic import Logic
+import logging
+import os
 def to_model_list(solve_handle):
     return [model for model in solve_handle]
 
@@ -75,5 +77,42 @@ class ModelUtil:
                 count += 1
         return count
 
+def splitSymbols(symbols, startSize, enumerator,classifier, max_conc=50):
+        ctl = clingo.Control(['-n 0'])
+        add_symbols(ctl, symbols)
+        ctl.load(Logic.pruneFile)
+        
+        ctl.ground([Logic.base, enumerator(startSize, max_conc)])
+        group_n = None
 
+        with ctl.solve(yield_=True) as models:
+            models = to_model_list(models)
+            check_multiple(models)
+            for model in models:
+                symbols = model.symbols(atoms=True)
+                group_n = model.symbols(shown=True)[0].arguments[0].number
+        del(ctl)
 
+        ctl = clingo.Control(['-n 0'])
+        add_symbols(ctl, symbols)
+        ctl.load(Logic.pruneFile)
+        ctl.ground([Logic.base, classifier])
+        concept_n = None
+        result = []
+        for i in range(group_n+1):
+            ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), False)
+        for i in range(group_n+1):
+            ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), True)
+            #logging.debug('{}th group'.format(i))
+            with ctl.solve(yield_=True) as models:
+                models = to_model_list(models)
+                check_multiple(models)
+                model = models[0]
+                symbols = model.symbols(shown=True)  
+                if i == 0:
+                    concept_n = symbols[0].arguments[0].number
+                else:
+                    result.append(symbols)
+                ctl.assign_external(clingo.Function('model', [clingo.Number(i)]), False)
+
+        return concept_n, result
