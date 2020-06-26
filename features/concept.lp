@@ -14,29 +14,8 @@ role(R)             Expression R represents a role.
 
 *%
 #defined role/2.
-%*
-Load sample and logic
-Generate batch of expressions
-Prune internally any repeated expressions
-Prune with concepts from last rounds
-Prune with the current pool of expressions
-Add all unique expressions to the new pool
-Only keep information about concepts / pool (discard the rest)
-Repeat until all k-th depth have been generated
-Add k-th depth concepts
-Repeat for each depth level incrementally
-Identifying batches:
-    depth
-    generation:
-        require no expression
-        require one expression
-        require two expressions
-            2 concepts
-            2 roles
-            1 concept and 1 role
-    subbatch id:
-        divide existing concepts into shards and generate from each shard/couple of shards separately
-*%
+#defined const/1.
+#defined state/1.
 
 #program primitive(depth).
 
@@ -58,28 +37,6 @@ exp(nomi(X), depth) :- const(X), depth = 1.
 belong(X, neg(C), S) :- const(X), exp(neg(C), depth), state(S), not belong(X, C, S).
 exp(neg(C), depth) :- conc(C, depth-1), depth = 2.
 
-%Upper bound in concept and role complexity
-%*
-#program conjunction(depth, input1, input2).
-
-:- not depth = input1 + input2 + 1.
-
-%Rule for conjunction
-
-is_and(and(C1, C2)) :- conc(and(C1, C2), _).
-
-exp(and(C1, C2), depth) :-
-    conc(C1, input1), conc(C2, input2),
-    not is_and(C1), not is_and(C2), C1 < C2.
-
-exp(and(C1, and(C2, C3)), depth) :-
-    conc(C1, input1), conc(and(C2, C3), input2),
-    not is_and(C1), C1 < C2.
-
-belong(X, and(C1, C2), S) :-    
-    const(X), exp(and(C1, C2), depth), state(S),
-    belong(X, C1, S), belong(X, C2, S).
-*%
 #program conjunction(depth, input1, input2).
 
 :- not depth = input1 + input2 + 1.
@@ -109,14 +66,11 @@ belong((X, Y), inv(r_prim(P)), S) :- const(X), const(Y), pred(P), arity(P, 2), s
 r_basic(r_prim(P)) :- belong(_, r_prim(P), _).
 r_basic(inv(R)) :- belong(_, inv(R), _).
 role(R, 1) :- r_basic(R).
-%cost(R, 1) :- r_basic(R), depth = 1.
 
 %Transitive roles based on primitives and inverses
 belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S).
 belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S).
 role(tran(R), 1) :- belong(_, tran(R), _).
-
-%cost(tran(R), 1) :- belong(_, tran(R), _), i = 1.
 
 #program equal_role(depth).
 
@@ -128,7 +82,6 @@ belong(X, eq(R1, R2), S) :- const(X), role(R1, _), role(R2, _), state(S), exp(eq
                             R1 < R2.
 
 exp(eq(R1, R2), depth) :- role(R1, 1), role(R2, 1), depth = 3.
-%cost(eq(R1, R2), N1 + N2 + 1) :- exp(eq(R1, R2), i), cost(R1, N1), cost(R2, N2).
 
 #program uni(depth).
 
@@ -140,7 +93,6 @@ belong(X, uni(R, C), S) :-
     belong(Y, C, S) : const(Y).
 
 exp(uni(R, C), depth) :- role(R, 1), conc(C, depth-2).
-%cost(uni(R, C), NR + NC + 1) :- exp(uni(R, C), i), cost(R, NR), cost(C, NC).
 
 #program exi(depth).
 
@@ -150,4 +102,3 @@ belong(X, exi(R, C), S) :-
     belong((X, Y), R, S), belong(Y, C, S).
 
 exp(exi(R, C), depth) :- role(R, 1), conc(C, depth-2).
-%cost(exi(R, C), NR + NC + 1) :- exp(exi(R, C), i), cost(R, NR), cost(C, NC).

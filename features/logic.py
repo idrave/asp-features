@@ -6,43 +6,18 @@ class Logic:
     grammarFile = str(logicPath/'concept.lp')
     featureFile = str(logicPath/'features.lp')
     base = ('base', [])
-    @staticmethod
-    def primitive(depth):
-        return ('primitive', [depth])
-    
     roles = ('roles', [])
+    
 
-    @staticmethod
-    def negation(depth):
-        return ('negation', [depth])
-    @staticmethod
-    def equalRole(depth):
-        return ('equal_role', [depth])
-    @staticmethod
-    def conjunction(depth, in1, in2):
-        return ('conjunction', [depth, in1, in2])
-    @staticmethod
-    def uni(depth):
-        return ('uni', [depth])
-    @staticmethod
-    def exi(depth):
-        return ('exi', [depth])
-    @staticmethod
-    def enumerate(start, gsize):
-        return ('enumerate', [start, gsize])
-    @staticmethod
-    def enumerateExp(start, gsize):
-        return ('enumerate_exp', [start, gsize])
-
-    classify = ('classify', [])
-    classifyExp = ('classify_exp', [])
     pruneFile = str(logicPath/'prune.lp')
-    keepExp = ('keep_exp', []) 
-    compareExp = ('compare_exp', []) 
-    pruneExp = ('prune_exp', [])
-    compareExpConc = ('compare_exp_conc', []) 
-    toConcept = ('exp2conc', [])
+    
     keepRoles = ('get_roles', [])
+    @staticmethod
+    def index_role(start):
+        return ('index_role', [start])
+    @staticmethod
+    def number_state(start):
+        return ('index_state', [start])
     simplifySample = ('simplify', [])
     divide = ('divide', [])
 
@@ -63,3 +38,40 @@ class Logic:
         return ('enumerate_feat', [start, gsize])
     classifyFeat = ('classify_feat', [])
     
+class Concept:
+    cardinality = ('cardinality', [])
+    compareExp = ('compare_exp', [])
+    keepExp = ('keep_exp', [])
+    pruneExp = ('prune_exp', [])
+    compareExpConc = ('compare_exp_conc', [])
+
+    @staticmethod
+    def numberConc(start, first, gsize):
+        return ('number_conc', [start, first, gsize])
+
+    classify = ('classify', [])
+    #classifyExp = ('classify_exp', [])
+
+    @staticmethod
+    def primitive(depth):
+        return ('primitive', [depth])
+    
+    @staticmethod
+    def negation(depth):
+        return ('negation', [depth])
+
+    @staticmethod
+    def equalRole(depth):
+        return ('equal_role', [depth])
+
+    @staticmethod
+    def conjunction(depth, in1, in2):
+        return ('conjunction', [depth, in1, in2])
+
+    @staticmethod
+    def uni(depth):
+        return ('uni', [depth])
+        
+    @staticmethod
+    def exi(depth):
+        return ('exi', [depth])
