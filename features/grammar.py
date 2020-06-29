@@ -10,7 +10,7 @@ from pathlib import Path
 from model_util import check_multiple
 from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols
 from features.logic import Logic, Concept
-from features.knowledge import ClingoSolver, ConceptFile, splitSymbols
+from features.knowledge import ClingoSolver, ConceptFile, splitSymbols, Solver
 from typing import List, Tuple
 
 class Comparison:
@@ -29,24 +29,24 @@ class Comparison:
     def __call__(self, ctl):
         self.type(ctl)
 
-    def __standardCompare(self, ctl: ClingoSolver):
+    def __standardCompare(self, ctl):
         ctl.load(str(self.file))
         ctl.ground([('standard_differ', [])])
         ctl.solve()
 
-    def __fastCompare(self, ctl: ClingoSolver):
+    def __fastCompare(self, ctl):
         ctl.load(str(self.file))
         ctl.ground([('fast_differ', [])])
         ctl.solve()
     
-    def __mixedCompare(self, ctl: ClingoSolver):
+    def __mixedCompare(self, ctl):
         ctl.load(str(self.file))
         ctl.ground([('optimal_differ_start', [])])
         ctl.solve()
         ctl.ground([('optimal_differ_end', [])])
         ctl.solve()
 
-    def __featureCompare(self, ctl: ClingoSolver):
+    def __featureCompare(self, ctl):
         ctl.load(str(self.file))
         ctl.ground([('feature_differ', [])])
         ctl.solve()
@@ -54,18 +54,16 @@ class Comparison:
 def prune_symbols(symbols: List[clingo.Symbol], prune_file: str,
                   compare_prog: Tuple, compare: Comparison, prune_prog: Tuple,
                   files: List =[]):
-    with ClingoSolver() as ctl:
+    with Solver.open() as ctl:
         ctl.load(prune_file)
         ctl.load(files)
         ctl.addSymbols(symbols)
         ctl.ground([Logic.base, compare_prog])
         compare(ctl)
-        #print(files, ctl.countAtoms('exp', 2), ctl.countAtoms('conc', 2), ctl.countAtoms('compare', 2), compare_prog, prune_prog)
         ctl.ground([prune_prog])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        #print(ctl.getAtoms('belong', 3))
-        #logging.debug('Result: {}, {}'.format(ctl.countAtoms('keep', 1), len(result)))
     return result
+
 
 class Primitive:
     def __init__(self, sample):
@@ -73,7 +71,7 @@ class Primitive:
 
     def __call__(self):
         logging.debug('Calling Primitive')
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.sample])
             ctl.ground([Logic.base, Concept.primitive(1), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -85,7 +83,7 @@ class Negation:
         self.primitive = primitive
     def __call__(self):
         logging.debug('Calling Negation({})'.format(self.primitive.name))
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.primitive.file, self.sample])
             ctl.ground([Logic.base, Concept.negation(2), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -99,7 +97,7 @@ class EqualRole:
 
     def __call__(self):
         logging.debug('Calling EqualRole')
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.roles, self.sample])
             ctl.ground([Logic.base, Concept.equalRole(3), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -113,7 +111,7 @@ class Conjunction:
 
     def __call__(self):
         logging.debug('Calling Conjunction({},{})'.format(self.concept1.name, self.concept2.name))
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.concept1.file, self.concept2.file, self.sample])
             depth = self.concept1.depth + self.concept2.depth + 1
             ctl.ground([Logic.base, Concept.conjunction(depth, self.concept1.depth, self.concept2.depth), Concept.keepExp])
@@ -128,7 +126,7 @@ class Uni:
 
     def __call__(self):
         logging.debug('Calling Uni({})'.format(self.concept.name))
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.uni(depth), Concept.keepExp])
@@ -142,7 +140,7 @@ class Exi:
         self.roles = roles
     def __call__(self):
         logging.debug('Calling Exi({})'.format(self.concept.name))
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.exi(depth), Concept.keepExp])
@@ -150,14 +148,14 @@ class Exi:
         return result
 
 def roles(sample):
-    with ClingoSolver() as ctl:
+    with Solver.open() as ctl:
         ctl.load([sample, Logic.grammarFile])
         ctl.ground([Logic.base, Logic.roles, Logic.keepRoles])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
     return result
 
 def const_state(sample):
-    with ClingoSolver() as ctl:
+    with Solver.open() as ctl:
         ctl.load([sample, Logic.grammarFile])
         ctl.ground([Logic.base, Logic.simplifySample])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -207,7 +205,7 @@ class Grammar:
     
     def addRoles(self):
         symbols = roles(self.samplePath)
-        with ClingoSolver() as ctl:
+        with Solver.open() as ctl:
             ctl.load(Logic.pruneFile)
             ctl.addSymbols(symbols)
             ctl.ground([Logic.base, Logic.index_role(0)])
@@ -232,10 +230,10 @@ class Grammar:
             if depth == 3:
                 variables.append(EqualRole(self.simple, self.roles))
             
-            #for i in range(1, (depth + 1)//2):
-            #    for conc1 in self.concepts[i]:
-            #        for conc2 in self.concepts[depth - i - 1]:
-            #            variables.append(Conjunction(self.simple, conc1, conc2))
+            for i in range(1, (depth + 1)//2):
+                for conc1 in self.concepts[i]:
+                    for conc2 in self.concepts[depth - i - 1]:
+                        variables.append(Conjunction(self.simple, conc1, conc2))
             for conc in self.concepts[depth - 2]:
                 variables.append(Uni(self.simple, conc, self.roles))
                 variables.append(Exi(self.simple, conc, self.roles))
@@ -247,6 +245,7 @@ class Grammar:
         for d in depths:
             for conc in self.concepts[d]:
                 yield conc
+
 
     def difference(self, expression_set: List[clingo.Symbol]) -> List[clingo.Symbol]:
         for conc in self.conceptIterator():
@@ -294,8 +293,8 @@ class Grammar:
             self.createDir()
             self.addRoles()
             self.addConstAndState()
-        #else:
-        #    self.loadProgress(start_depth-1)
+        else:
+            self.loadProgress(start_depth-1)
         
         for depth in range(start_depth, max_depth+1):
             if logg: print('Depth {}:'.format(depth))
@@ -376,30 +375,7 @@ class Grammar:
             feature.clean()
         print('Features Generated: {}'.format(self.feature_n))
     
-    def addCardinality(self):
-        for dep in self.depth:
-            for conc in self.depth[dep]:
-                logging.debug('Generating cardinality for {}'.format(conc.name))
-                ctl = clingo.Control()
-                conc.load(ctl)
-                self.simpleSample.load(ctl)
-                ctl.load(Logic.pruneFile)
-                ctl.ground([Logic.base, ('cardinality', [])])
-                symbols = []
-                with ctl.solve(yield_=True) as models:
-                    models = to_model_list(models)
-                    symbols = models[0].symbols(shown=True)
-                ModelUtil(symbols).write(conc.file)'''
-
-
-    @staticmethod
-    def countSymbol(symbols, name):
-        count = 0
-        for symbol in symbols:
-            if symbol.name == name:
-                count += 1
-
-        return count
+'''
 
 def countFile(file_name):
     count = 0
@@ -423,6 +399,8 @@ if __name__ == "__main__":
     parser.add_argument('--mix', action='store_true', help='Cardinality + standard prunning')
     parser.add_argument('-d', '--debug',help="Print debugging statements",
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
+    parser.add_argument('--proc',help="Runs clingo solver in separate process",
+        action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
     parser.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
     args = parser.parse_args()
     
@@ -436,6 +414,8 @@ if __name__ == "__main__":
     comp_type = 'mixed' if args.mix else comp_type
     comp_type = 'standard' if comp_type is None else comp_type    
     print(comp_type)
+    Solver.set_default(args.solver)
+    print(args.solver)
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
     import time
     start = time.time()
