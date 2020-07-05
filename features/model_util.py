@@ -39,12 +39,8 @@ def filter_symbols(ctl, single=True):
     if single: return results[0]
     return results
 
-def get_symbols(symbols, filter):
-    model_str = []
-    for symbol in symbols:
-        if (symbol.name, len(symbol.arguments)) in filter:
-            model_str.append(symbol)
-    return model_str
+def get_symbols(symbols, name, arity):
+    return list(filter(lambda s: s.match(name, arity), symbols))
 
 def check_multiple(models):
     if len(models) == 0:

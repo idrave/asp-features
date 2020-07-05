@@ -1,14 +1,12 @@
 from pathlib import Path
 
 class Logic:
-    #logicPath = Path(__file__).parent.absolute()
-    logicPath = Path('/home/ivan/Documents/ai/features/features')
+    logicPath = Path(__file__).parent.absolute()
+    #logicPath = Path('/home/ivan/Documents/ai/features/features')
     grammarFile = str(logicPath/'concept.lp')
     featureFile = str(logicPath/'features.lp')
     base = ('base', [])
     roles = ('roles', [])
-    
-
     pruneFile = str(logicPath/'prune.lp')
     
     keepRoles = ('get_roles', [])
@@ -21,22 +19,7 @@ class Logic:
     simplifySample = ('simplify', [])
     divide = ('divide', [])
 
-    primitiveFeature = ('primitiveFeature', [])
-    conceptFeature = ('conceptFeature', [])
-    @staticmethod
-    def distFeature(k):
-        return ('distFeature', [k])
-
     transitions = ('transitions', [])
-    processFeat = ('feature', [])
-    comparePreFeature = ('compare_prefeature', [])
-    compareFeature = ('compare_feature', [])
-    pruneFeature = ('prune_feature', [])
-    toFeature = ('to_feature', [])
-    @staticmethod
-    def enumerateFeat(start, gsize):
-        return ('enumerate_feat', [start, gsize])
-    classifyFeat = ('classify_feat', [])
     
 class Concept:
     cardinality = ('cardinality', [])
@@ -75,3 +58,21 @@ class Concept:
     @staticmethod
     def exi(depth):
         return ('exi', [depth])
+
+class Feature:
+    processFeat = ('feature', [])
+    comparePreFeature = ('compare_prefeature', [])
+    compareFeature = ('compare_feature', [])
+    pruneFeature = ('prune_feature', [])
+    @staticmethod
+    def numberFeat(start):
+        return ('number_feat', [start])
+    @staticmethod
+    def divide_feat(start, first, gsize):
+        return ('divide_feat', [start, first, gsize])
+    classifyFeat = ('classify_feat', [])
+    primitiveFeature = ('primitiveFeature', [])
+    conceptFeature = ('conceptFeature', [])
+    @staticmethod
+    def distFeature(k):
+        return ('distFeature', [k])

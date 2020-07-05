@@ -13,6 +13,7 @@ conc(C)             Expression C represents a concept. No two elements of conc r
 role(R)             Expression R represents a role.
 
 *%
+#show.
 #defined role/2.
 #defined const/1.
 #defined state/1.
@@ -72,6 +73,9 @@ belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S).
 belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S).
 role(tran(R), 1) :- belong(_, tran(R), _).
 
+#show role(Role, Cost) : role(Role, Cost).
+#show belong(Tuple, Role, State) : belong(Tuple, Role, State), role(Role, _).
+
 #program equal_role(depth).
 
 % Define concepts of the form R = R' for roles R and R'
@@ -102,3 +106,13 @@ belong(X, exi(R, C), S) :-
     belong((X, Y), R, S), belong(Y, C, S).
 
 exp(exi(R, C), depth) :- role(R, 1), conc(C, depth-2).
+
+#program keep_exp.
+#defined exp/2.
+#defined keep/1.
+cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
+
+keep(exp(C, N)) :- exp(C, N), belong(_, C, _).
+#show exp(C, N) : keep(exp(C, N)).
+#show belong(X, C, S) : keep(exp(C, _)), belong(X, C, S).
+#show cardinality(C, N, S) : keep(exp(C, _)), cardinality(C, N, S).

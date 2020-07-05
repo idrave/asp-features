@@ -15,8 +15,14 @@ differ(C1, C2) :-
 
 differ(C1, C2) :-  
     compare(C1, C2), not belong(X, C1, S), belong(X, C2, S).
-        
 
+#program standard_differ_set(num).
+differ(C1, C2) :-  
+    compare(C1, C2, num), belong(X, C1, S), not belong(X, C2, S).
+
+differ(C1, C2) :-  
+    compare(C1, C2, num), not belong(X, C1, S), belong(X, C2, S).
+        
 #program optimal_differ_start.
 differ_card(C1, C2) :- 
     compare(C1, C2), cardinality(C1, N, S), not cardinality(C2, N, S).

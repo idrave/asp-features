@@ -68,17 +68,7 @@ roleId(Role, Id) :- role(Role, _), Id = #count{R : role(R, _), R < Role}.
 compare(C1, C2) :- 
     exp(C1, _), exp(C2, _), C2 < C1.
 
-#program keep_exp.
-
-cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
-
-keep(exp(C, N)) :- exp(C, N), belong(_, C, _).
-#show exp(C, N) : keep(exp(C, N)).
-#show belong(X, C, S) : keep(exp(C, _)), belong(X, C, S).
-#show cardinality(C, N, S) : keep(exp(C, _)), cardinality(C, N, S).
-
 #program prune_exp.
-
 
 keep(exp(C, N)) :- exp(C, N), belong(_, C, _), differ(C, D) : compare(C, D).
 #show exp(C, N) : keep(exp(C, N)).
@@ -113,38 +103,55 @@ group(C, (C - M - first) / gsize + 1) :- conc(C, _), min(M), C - M >= first.
 #show belong(X, C, S) : belong(X, C, S), group(C, N), show(N).
 #show cardinality(C, M, S) : cardinality(C, M, S), group(C, N), show(N).
 
-#program enumerate_exp(start, gsize).
+%%%%%%%%%%%% Advanced Prunning %%%%%%%%%%%%
 
-count(N) :- N = #count{C : exp(C, _)}.
-models(0) :- count(0).
-models(1) :- count(N), N < start, N > 0.
-models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
-ord(C, N) :- exp(C, _), N = #count{D : D < C, exp(D, _)}.
+%Split expressions in sets of maximum size max_exp
+#program split_exp_conc(max_exp, max_conc).
+set(C, X) :- exp(C, _),
+    Before = #count{D : exp(D, _), D < C},
+    X = Before/max_exp.
+exp_groups((Count + max_exp - 1)/max_exp) :- Count = #count{C : exp(C, _)}.
 
-group(C, 1) :- ord(C, N), N < start.
-group(C, (N-start)/gsize+2) :- ord(C, N), N >= start.
-#show models(N) : models(N).
+set(C, ExpG + X) :- conc(C, _), exp_groups(ExpG),
+    Before = #count{D : conc(D, _), D < C},
+    X = Before/max_conc.
+conc_groups((Count + max_conc - 1)/max_conc) :- Count = #count{C : conc(C, _)}.
+%Prune redundant expressions inside set num and add output to set out
+#program join_set(num_1, num_2, out).
+candidate(C, out) :- set(C, num_1).
+candidate(C, out) :- set(C, num_2).
+compare(C, D, out) :-
+    set(C, num_1), set(D, num_2), D < C.
+compare(C, D, out) :-
+    set(C, num_2), set(D, num_1), D < C.
 
-#program classify_exp.
-#external model(X) : X=0..N, models(N).
+%Prune redundant expressions inside set num_exp wrt set num_conc and add output to set out
+#program difference_set(num_in, num_other, out).
 
-#show count(N) : model(0), count(N).
-keep(exp(C, M)) :- model(N), group(C, N), exp(C, M).
-#show exp(C, M) : keep(exp(C, M)).
-#show belong(X, C, S) : keep(exp(C, _)), belong(X, C, S).
-#show cardinality(C, N, S) : keep(exp(C, _)), cardinality(C, N, S).
+candidate(C, out) :- set(C, num_in).
+compare(C, D, out) :-
+    set(C, num_in), set(D, num_other).
 
+#program prune_set(num).
+
+set(C, num) :- candidate(C, num), differ(C, D) : compare(C, D, num).
+
+%Show symbols of expressions in set num
+#program show_exp_set(num).
+#show exp(C, N) : exp(C, N), set(C, num).
+#show belong(X, C, S) : belong(X, C, S), exp(C, _), set(C, num).
+#show cardinality(C, N, S) : cardinality(C, N, S), exp(C, _), set(C, num).
 %%%%%%%%%%%% Features %%%%%%%%%%%% 
 
 #program compare_prefeature.
 
-compare(F1, F2) :- prefeature(F1), prefeature(F2), F1 < F2.
+compare(F1, F2) :- prefeature(F1), prefeature(F2), F2 < F1.
 
 #program compare_feature.
 
 compare(F1, F2) :- prefeature(F1), feature(F2).
 
-#program prune_feature.
+#program prune_feature.%TODO add hasValue
 
 keep(prefeature(F)) :- prefeature(F), differ(F, G) : compare(F, G).
 
@@ -155,35 +162,51 @@ keep(prefeature(F)) :- prefeature(F), differ(F, G) : compare(F, G).
 #show qualValue(F, V, S) : qualValue(F, V, S),keep(prefeature(F)).
 #show delta(S, T, F, V) : delta(S, T, F, V),keep(prefeature(F)).
 
-#program to_feature.
+#program number_feat(start).
 
-#show feature(F) : prefeature(F).
-#show bool(F) : bool(F), prefeature(F).
-#show num(F) : num(F), prefeature(F).
-#show cost(F, N) : cost(F, N),prefeature(F).
-#show qualValue(F, V, S) : qualValue(F, V, S),prefeature(F).
-#show delta(S, T, F, V) : delta(S, T, F, V),prefeature(F).
-
-#program enumerate_feat(start, gsize).
+featureId(F, N + start) :- prefeature(F), N = #count{G : G < F, prefeature(G)}.
+feature(I) :- featureId(F, I), prefeature(F).
+bool(I) :- featureId(F, I), bool(F).
+num(I) :- featureId(F, I), num(F).
+cost(I, N) :- cost(F, N), featureId(F, I).
+qualValue(I, V, S) :- qualValue(F, V, S), featureId(F, I).
+delta(S, T, I, V) :- delta(S, T, F, V), featureId(F, I).
 
 count(N) :- N = #count{F : feature(F)}.
-models(0) :- count(0).
-models(1) :- count(N), N < start, N > 0.
-models(1+(N-start+gsize-1)/gsize) :- count(N), N >= start.
-ord(F, N) :- feature(F), N = #count{G : G < F, feature(G)}.
 
-group(F, 1) :- ord(F, N), N < start.
-group(F, (N-start)/gsize+2) :- ord(F, N), N >= start.
-#show models(N) : models(N).
+#show featureId(F, I) : featureId(F, I).
+#show feature(F) : feature(F).
+#show bool(F) : bool(F), feature(F).
+#show num(F) : num(F), feature(F).
+#show cost(F, C) : cost(F, C), feature(F).
+#show qualValue(F, V, S) : qualValue(F, V, S), feature(F).
+#show delta(S, T, F, V) : delta(S, T, F, V), feature(F).
 
-#program classify_feat.
-#external model(X) : X=0..N, models(N).
+#program divide_feat(start, first, gsize).%TODO can this be deleted?
+%*
+featureId(F, N + start) :- prefeature(F), N = #count{G : G < F, prefeature(G)}.
+feature(I) :- featureId(F, I), prefeature(F).
+bool(I) : featureId(F, I), bool(F).
+num(I) : featureId(F, I), num(F).
+cost(I, N) : cost(F, N), featureId(F, I).
+qualValue(I, V, S) : qualValue(F, V, S), featureId(F, I).
+delta(S, T, I, V) : delta(S, T, F, V), featureId(F, I).
+*%
+count(N) :- N = #count{F : feature(F)}.
+min(M) :- M = #min{F : feature(F)}.
+groups(0) :- count(0).
+groups(1) :- count(N), N < first, N > 0.
+groups(1 + (N-first+gsize-1)/gsize) :- count(N), N >= first.
 
-#show count(N) : model(0), count(N).
-keep(feature(F)) :- model(N), group(F, N), feature(F).
-#show feature(F) : keep(feature(F)).
-#show bool(F) : bool(F), keep(feature(F)).
-#show num(F) : num(F), keep(feature(F)).
-#show cost(F, N) : cost(F, N),keep(feature(F)).
-#show qualValue(F, V, S) : qualValue(F, V, S),keep(feature(F)).
-#show delta(S, T, F, V) : delta(S, T, F, V),keep(feature(F)).
+group(F, 0) :- feature(F), min(M), F - M < first.
+group(F, (F - M - first) / gsize + 1) :- feature(F), min(M), F - M >= first.
+
+#program classify_feat.%TODO add hasValue
+#external show(X) : X=0..N-1, groups(N).
+#show featureId(F, I) : featureId(F, I), group(I, N), show(N).
+#show feature(F) : feature(F), group(F, N), show(N).
+#show bool(F) : bool(F), group(F, N), show(N).
+#show num(F) : num(F), group(F, N), show(N).
+#show cost(F, C) : cost(F, C), group(F, N), show(N).
+#show qualValue(F, V, S) : qualValue(F, V, S), group(F, N), show(N).
+#show delta(S, T, F, V) : delta(S, T, F, V), group(F, N), show(N).

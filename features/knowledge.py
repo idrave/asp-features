@@ -1,5 +1,5 @@
 import clingo
-from model_util import add_symbols, ModelUtil, check_multiple
+from model_util import add_symbols, ModelUtil, check_multiple, count_symbols
 from features.logic import Logic
 from pathlib import Path
 import pickle
@@ -14,15 +14,15 @@ def splitSymbols(symbols, start_id, first_size, id_prog, get_prog, max_conc=50):
     with ClingoSolver() as ctl:
         ctl.addSymbols(symbols)
         ctl.load(Logic.pruneFile)
+        print(id_prog(start_id, first_size, max_conc))
         ctl.ground([Logic.base, id_prog(start_id, first_size, max_conc)])
         ctl.solve()
-        
         group_n = None
         atom_n = None
         group_n = ctl.getAtoms('groups', 1)[0].arguments[0].number
         atom_n = ctl.getAtoms('count', 1)[0].arguments[0].number
-        print(group_n, atom_n)
-        #print(ctl.getAtoms('conceptId', 2))
+        print(group_n, atom_n, ctl.countAtoms('group', 2))
+        print(get_prog)
         ctl.ground([get_prog])
         result = []
         for i in range(group_n):
@@ -35,7 +35,71 @@ def splitSymbols(symbols, start_id, first_size, id_prog, get_prog, max_conc=50):
 
     return atom_n, result
 
+def number_symbols(symbols, start_id, id_prog):
+    with Solver.open() as ctl:
+        ctl.addSymbols(symbols)
+        ctl.load(Logic.pruneFile)
+        ctl.ground([Logic.base, id_prog(start_id)])
+        symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
+        
+        atom_n = None
+        atom_n = ctl.getAtoms('count', 1)[0].arguments[0].number
 
+    return atom_n, symbols
+
+class Comparison:
+    def __init__(self, comp_type='standard'):
+        self.file = str(Logic.logicPath/'differ.lp')
+        types = {
+            'standard' : self.__standardCompare,
+            'fast' : self.__fastCompare,
+            'mixed' : self.__mixedCompare,
+            'feature' : self.__featureCompare
+        }
+        self.type = types.get(comp_type, None)
+        if self.type is None:
+            raise RuntimeError("Invalid comparison type.")
+
+    def __call__(self, ctl):
+        self.type(ctl)
+
+    def __standardCompare(self, ctl):
+        ctl.load(str(self.file))
+        ctl.ground([('standard_differ', [])])
+        ctl.solve()
+
+    def __fastCompare(self, ctl):
+        ctl.load(str(self.file))
+        ctl.ground([('fast_differ', [])])
+        ctl.solve()
+    
+    def __mixedCompare(self, ctl):
+        ctl.load(str(self.file))
+        ctl.ground([('optimal_differ_start', [])])
+        ctl.solve()
+        ctl.ground([('optimal_differ_end', [])])
+        ctl.solve()
+
+    def __featureCompare(self, ctl):
+        ctl.load(str(self.file))
+        ctl.ground([('feature_differ', [])])
+        ctl.solve()
+#TODO add option to load files incrementaly instead of all at once
+def prune_symbols(symbols: List[clingo.Symbol], prune_file: str,
+                  compare_prog: Tuple, compare: Comparison, prune_prog: Tuple,
+                  files: List =[]):
+    with Solver.open() as ctl:
+        ctl.load(prune_file)
+        ctl.load(files)
+        ctl.addSymbols(symbols)
+        ctl.ground([Logic.base, compare_prog])
+        compare(ctl)
+        ctl.ground([prune_prog])
+        result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
+        #logging.debug(ctl.getAtoms('compare', 2))
+        logging.debug('Compare: {}. Differ: {}'.format(ctl.countAtoms('compare', 2), ctl.countAtoms('differ', 2)))
+        #logging.debug(ctl.countAtoms('qualValue', 3))
+    return result
 
 class ConceptFile:
     def __init__(self, name, file_, depth):

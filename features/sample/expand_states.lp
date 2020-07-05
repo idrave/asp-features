@@ -65,6 +65,7 @@ goal(State) :- expanded(State, depth), holds(Variable, Value, State) : goal(Vari
 
 validAction(Action, State, depth) :-
     state(State, depth-1), action(Action),
+    not goal(State), %Goal states are terminal, no further actions can be performed
     holds(Variable, Value, State) : precondition(Action, Variable, Value).
 
 expanded(apply(Action, State), depth) :- validAction(Action, State, depth).

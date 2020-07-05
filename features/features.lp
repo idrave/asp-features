@@ -24,7 +24,7 @@ delta(S1, S2, F, plus) :- transition(S1, S2), bool(F), hasValue(F, false, S1), h
 delta(S1, S2, F, minus) :- transition(S1, S2), bool(F), hasValue(F, true, S1), hasValue(F, false, S2).
 delta(S1, S2, F, inc) :- transition(S1, S2), num(F), hasValue(F, M, S1), hasValue(F, N, S2), M < N.
 delta(S1, S2, F, dec) :- transition(S1, S2), num(F), hasValue(F, M, S1), hasValue(F, N, S2), M > N.
-delta(S1, S2, F, null) :- transition(S1, S2), feature(F), hasValue(F, M, S1), hasValue(F, M, S2).
+delta(S1, S2, F, null) :- transition(S1, S2), prefeature(F), hasValue(F, M, S1), hasValue(F, M, S2).
 
 prefeature(F) :- bool(F).
 prefeature(F) :- num(F).
@@ -46,12 +46,6 @@ cost(pred(P), 0) :- bool(pred(P)).
 
 hasValue(pred(P), true, S) :- bool(pred(P)), state(S), hold(S, P).
 
-#show bool(F) : bool(F).
-#show num(F) : num(F).
-#show hasValue(F, V, S) : hasValue(F, V, S).
-#show cost(F, N) : cost(F, N).
-#show transition(S, T):transition(S, T).
-
 #program conceptFeature.
 %general boolean rule:
 hasValue(F, false, S) :- bool(F), state(S), not hasValue(F, true, S).
@@ -63,12 +57,6 @@ cost(conc(C), N) :- conc(C, N), num(conc(C)).
 
 hasValue(conc(C), true, S) :- bool(conc(C)), cardinality(C, 1, S).
 hasValue(conc(C), N, S) :- num(conc(C)), cardinality(C, N, S).
-
-#show bool(F) : bool(F).
-#show num(F) : num(F).
-#show hasValue(F, V, S) : hasValue(F, V, S).
-#show cost(F, N) : cost(F, N).
-#show transition(S, T):transition(S, T).
 
 #program distFeature(k).
 num(dist(C1, R, C, C2)) :- conc(C1, M), role(R), cost(R, N), conc(C, O), conc(C2, P),
@@ -84,9 +72,4 @@ hasValue(dist(C1, R, C, C2), N, S) :- num(dist(C1, R, C, C2)), state(S), not has
                         N-1 = #min{M : const(X), const(Y), belong(X, C1, S), belong((X, Y), R, S),
                         belong(Y, C, S), hasValue(dist(nomi(Y), R, C, C2), M, S)}.
 
-#show bool(F) : bool(F).
-#show num(F) : num(F).
-#show hasValue(F, V, S) : hasValue(F, V, S).
-#show cost(F, N) : cost(F, N).
-#show transition(S, T):transition(S, T).
 

@@ -7,63 +7,10 @@ import re
 import argparse
 import os
 from pathlib import Path
-from model_util import check_multiple
-from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols
+from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols, count_symbols, get_symbols
 from features.logic import Logic, Concept
-from features.knowledge import ClingoSolver, ConceptFile, splitSymbols, Solver
+from features.knowledge import ConceptFile, splitSymbols, Solver, prune_symbols, Comparison
 from typing import List, Tuple
-
-class Comparison:
-    def __init__(self, comp_type='standard'):
-        self.file = str(Logic.logicPath/'differ.lp')
-        types = {
-            'standard' : self.__standardCompare,
-            'fast' : self.__fastCompare,
-            'mixed' : self.__mixedCompare,
-            'feature' : self.__featureCompare
-        }
-        self.type = types.get(comp_type, None)
-        if self.type is None:
-            raise RuntimeError("Invalid comparison type.")
-
-    def __call__(self, ctl):
-        self.type(ctl)
-
-    def __standardCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('standard_differ', [])])
-        ctl.solve()
-
-    def __fastCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('fast_differ', [])])
-        ctl.solve()
-    
-    def __mixedCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('optimal_differ_start', [])])
-        ctl.solve()
-        ctl.ground([('optimal_differ_end', [])])
-        ctl.solve()
-
-    def __featureCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('feature_differ', [])])
-        ctl.solve()
-
-def prune_symbols(symbols: List[clingo.Symbol], prune_file: str,
-                  compare_prog: Tuple, compare: Comparison, prune_prog: Tuple,
-                  files: List =[]):
-    with Solver.open() as ctl:
-        ctl.load(prune_file)
-        ctl.load(files)
-        ctl.addSymbols(symbols)
-        ctl.ground([Logic.base, compare_prog])
-        compare(ctl)
-        ctl.ground([prune_prog])
-        result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-    return result
-
 
 class Primitive:
     def __init__(self, sample):
@@ -156,7 +103,7 @@ def roles(sample):
 
 def const_state(sample):
     with Solver.open() as ctl:
-        ctl.load([sample, Logic.grammarFile])
+        ctl.load([sample, Logic.pruneFile])
         ctl.ground([Logic.base, Logic.simplifySample])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
     return result
@@ -180,8 +127,6 @@ class Grammar:
                 print(repr(e))
                 sys.exit()
 
-
-    
     def loadProgress(self, depth):
         if depth < 1: return
         directory = os.listdir(self.path)
@@ -242,21 +187,34 @@ class Grammar:
     def conceptIterator(self):
         depths = list(self.concepts.keys())
         depths.sort()
+
         for d in depths:
             for conc in self.concepts[d]:
                 yield conc
 
-
-    def difference(self, expression_set: List[clingo.Symbol]) -> List[clingo.Symbol]:
-        for conc in self.conceptIterator():
-            logging.debug('Prune with {}'.format(conc.name))
+    def batchIterator(self, batch=1):
+        depths = list(self.concepts.keys())
+        depths.sort()
+        l = []
+        for d in depths:
+            for conc in self.concepts[d]:
+                l.append(conc)
+                if len(l) == batch:
+                    yield l
+                    l = []
+        if len(l):
+            yield l
+#TODO add customizable batch sizes to prunning.
+    def difference(self, expression_set: List[clingo.Symbol], batch=1) -> List[clingo.Symbol]:
+        for conc in self.batchIterator(batch = batch):
+            logging.debug('Prune with {}'.format([c.name for c in conc]))
             expression_set = prune_symbols(
                 expression_set,
                 Logic.pruneFile,
                 Concept.compareExpConc,
                 self.compare,
                 Concept.pruneExp,
-                files=[conc.file])
+                files=[c.file for c in conc])
         return expression_set
                         
     def addConcepts(self, depth, symbols, max_size=50):
@@ -286,7 +244,7 @@ class Grammar:
         self.conceptNum[depth] += concept_n
         self.total_concepts += concept_n
 
-    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50, type_='clingo'):
+    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50, batch=1):
         logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
         
         if start_depth <= 1:
@@ -304,6 +262,7 @@ class Grammar:
             logging.debug('Number of concept groups: {}'.format(len(expressions)))
             for exp in expressions:
                 symbols = exp()
+                logging.debug('Expressions {}'.format(count_symbols(symbols, 'exp', 2)))
                 symbols = prune_symbols(
                     symbols,
                     Logic.pruneFile,
@@ -311,7 +270,8 @@ class Grammar:
                     self.compare,
                     Concept.pruneExp
                 )
-                symbols = self.difference(symbols)
+                logging.debug('Unique expressions {}'.format(count_symbols(symbols, 'exp', 2)))
+                symbols = self.difference(symbols, batch=batch)
 
                 self.addConcepts(depth, symbols, max_size=max_conc)
                 del symbols[:]
@@ -324,58 +284,6 @@ class Grammar:
             for conc in self.conceptIterator():
                 with open(conc.file) as infile:
                     outfile.write(infile.read())
-    '''
-    def getConceptBatches(self, batch_size):
-        result = []
-        count = 0
-        for dep in self.depth:
-            for conc in self.depth[dep]:
-                if count == 0: result.append(list())
-                result[-1].append(conc)
-                count = (count + 1) % batch_size
-        return result
-
-
-    def generateFeatures(self, concept_batch=1, feature_max=50):
-        self.transitions = GrammarKnowledge('transition', self.path/'transition.lp', Logic.base, [self.sample])
-        self.transitions.generate() #TODO any generate will fail if the file loaded has #show. and no other #show statements
-        self.transitions.filter(Logic.pruneFile, Logic.transitions)
-        self.transitions.write()
-
-        self.features = []
-        self.feature_n = 0
-        feature_compare = Comparison(Logic.logicPath, comp_type='feature')
-        print('#### Starting Feature Generation ####')
-        name = 'features_{}'.format(self.feature_n)
-        feature = FeatureSet(name, '{}.lp'.format(name), Logic.primitiveFeature, [self.transitions, self.sample])
-        feature.generate(feature_compare)
-        feature.toFinal()
-        symbols = feature.getSymbols()
-        logging.debug('Generating features from null predicates')
-
-        self.feature_n = self.addResults(
-                'features', self.feature_n, self.features, symbols,
-                Logic.enumerateFeat,Logic.classifyFeat, max_size=feature_max)
-        feature.clean()
-        
-        batches = self.getConceptBatches(concept_batch)
-        for batch in batches:
-            logging.debug('Generating features from {}'.format([ks.name for ks in batch]))
-            name = 'features_{}'.format(self.feature_n)
-            feature = FeatureSet(name, '{}.lp'.format(name), Logic.conceptFeature, [self.transitions]+batch)
-            feature.generate(feature_compare)
-            for feat in self.features:
-                logging.debug('Prunning with {}'.format(feat.name))
-                feature.removeRedundant(feat,feature_compare)
-            feature.toFinal()
-            symbols = feature.getSymbols()
-            self.feature_n = self.addResults(
-                    'features', self.feature_n, self.features, symbols,
-                    Logic.enumerateFeat,Logic.classifyFeat, max_size=feature_max)
-            feature.clean()
-        print('Features Generated: {}'.format(self.feature_n))
-    
-'''
 
 def countFile(file_name):
     count = 0
@@ -389,11 +297,10 @@ def countFile(file_name):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('sample', type=str, help='Sample file path')
-    parser.add_argument('out_dir', type=str, help='Output folder')
+    parser.add_argument('out_dir', type=str, help='Output directory')
     parser.add_argument('max_depth', type=int, help='Maximum concept depth')
     parser.add_argument('-s', '--start',action='store',default=1, type=int, help='Starting depth')
     parser.add_argument('-c', '--conc',action='store',default=50, type=int, help='Max number of concepts in file')
-    parser.add_argument('-f', '--feat',action='store',default=50, type=int, help='Max number of features in file')
     parser.add_argument('--fast', action='store_true', help='Prunning with cardinality')
     parser.add_argument('--std', action='store_true', help='Standard sound prunning')
     parser.add_argument('--mix', action='store_true', help='Cardinality + standard prunning')
@@ -401,10 +308,10 @@ if __name__ == "__main__":
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
     parser.add_argument('--proc',help="Runs clingo solver in separate process",
         action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
-    parser.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
+    parser.add_argument('--batch',help="Number of concept files used for prunning at the same time",
+        type=int)
     args = parser.parse_args()
-    
-
+    print(sys.path)
     logging.basicConfig(level=args.loglevel)
     if sum((int(b) for b in (args.fast, args.std, args.mix))) > 1:
         RuntimeError('More than one prunning type specified')
@@ -419,8 +326,9 @@ if __name__ == "__main__":
     grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
     import time
     start = time.time()
-    grammar.loadProgress(args.start-1)
-    #grammar.addCardinality()
-    grammar.expandGrammar(args.start, args.max_depth, logg=True, max_conc=args.conc)
-    #grammar.generateFeatures(concept_batch=args.batch, feature_max=args.feat)
+    print(Logic.logicPath, Logic.grammarFile)
+    #grammar.loadProgress(args.start)
+    #for c in grammar.conceptIterator():
+    #    print(c.file)
+    grammar.expandGrammar(args.start, args.max_depth, logg=True, max_conc=args.conc, batch=args.batch)
     print("Took {}s.".format(round(time.time()-start, 2)))
