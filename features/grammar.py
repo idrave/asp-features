@@ -8,9 +8,58 @@ import argparse
 import os
 from pathlib import Path
 from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols, count_symbols, get_symbols
-from features.logic import Logic, Concept
-from features.knowledge import ConceptFile, splitSymbols, Solver, prune_symbols, Comparison
+from features.logic import Logic
+from features.knowledge import ConceptFile, splitSymbols, Solver, prune_symbols
+from comparison import CompareConcept
 from typing import List, Tuple
+from prune import Pruneable
+
+class Concept(Pruneable):
+    cardinality = ('cardinality', [])
+    compareExp = ('compare_exp', [])
+    keepExp = ('keep_exp', [])
+    pruneExp = ('prune_exp', [])
+    compareExpConc = ('compare_exp_conc', [])
+    prune_file = str(Logic.logicPath/'prune.lp')
+
+    @staticmethod
+    def numberConc(start, first, gsize):
+        return ('number_conc', [start, first, gsize])
+
+    classify = ('classify', [])
+    #classifyExp = ('classify_exp', [])
+
+    @staticmethod
+    def primitive(depth):
+        return ('primitive', [depth])
+    
+    @staticmethod
+    def negation(depth):
+        return ('negation', [depth])
+
+    @staticmethod
+    def equalRole(depth):
+        return ('equal_role', [depth])
+
+    @staticmethod
+    def conjunction(depth, in1, in2):
+        return ('conjunction', [depth, in1, in2])
+
+    @staticmethod
+    def uni(depth):
+        return ('uni', [depth])
+        
+    @staticmethod
+    def exi(depth):
+        return ('exi', [depth])
+
+    @staticmethod
+    def init_sets(max_exp, max_conc):
+        return ('split_exp_conc', [max_exp, max_conc])
+
+    @staticmethod
+    def show_set(set):
+        return ('show_exp_set', [set])
 
 class Primitive:
     def __init__(self, sample):
@@ -115,7 +164,7 @@ class Grammar:
         self.path = Path(path)
         self.concepts = {}
         self.conceptNum = {}
-        self.compare = Comparison(comp_type=comp_type)
+        self.compare = CompareConcept(comp_type=comp_type)
         self.total_concepts = 0
     
     def createDir(self):
@@ -184,6 +233,15 @@ class Grammar:
                 variables.append(Exi(self.simple, conc, self.roles))
             return variables
 
+    def get_concepts(self):
+        depths = list(self.concepts.keys())
+        depths.sort()
+        concepts = []
+        for d in depths:
+            for conc in self.concepts[d]:
+                concepts.append(conc)
+        return concepts
+
     def conceptIterator(self):
         depths = list(self.concepts.keys())
         depths.sort()
@@ -204,7 +262,7 @@ class Grammar:
                     l = []
         if len(l):
             yield l
-#TODO add customizable batch sizes to prunning.
+    #TODO add customizable batch sizes to prunning.
     def difference(self, expression_set: List[clingo.Symbol], batch=1) -> List[clingo.Symbol]:
         for conc in self.batchIterator(batch = batch):
             logging.debug('Prune with {}'.format([c.name for c in conc]))
@@ -216,7 +274,14 @@ class Grammar:
                 Concept.pruneExp,
                 files=[c.file for c in conc])
         return expression_set
-                        
+
+    def prune(self, expressions, max_exp, max_conc):
+        concept_files = [conc.file for conc in self.get_concepts()]
+        return Concept.prune_symbols(
+                    expressions, concept_files, self.compare,
+                    max_atoms=max_exp, max_comp=max_conc
+                )
+
     def addConcepts(self, depth, symbols, max_size=50):
         startSize = (max_size - (self.conceptNum[depth] % max_size)) % max_size
         logging.debug('Start size {}'.format(startSize))
@@ -244,7 +309,7 @@ class Grammar:
         self.conceptNum[depth] += concept_n
         self.total_concepts += concept_n
 
-    def expandGrammar(self, start_depth, max_depth, logg=False, max_conc=50, batch=1):
+    def expandGrammar(self, start_depth, max_depth, logg=False, max_exp=50, max_conc=50):
         logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
         
         if start_depth <= 1:
@@ -263,16 +328,7 @@ class Grammar:
             for exp in expressions:
                 symbols = exp()
                 logging.debug('Expressions {}'.format(count_symbols(symbols, 'exp', 2)))
-                symbols = prune_symbols(
-                    symbols,
-                    Logic.pruneFile,
-                    Concept.compareExp,
-                    self.compare,
-                    Concept.pruneExp
-                )
-                logging.debug('Unique expressions {}'.format(count_symbols(symbols, 'exp', 2)))
-                symbols = self.difference(symbols, batch=batch)
-
+                symbols = self.prune(symbols, max_exp=max_exp, max_conc=max_conc)
                 self.addConcepts(depth, symbols, max_size=max_conc)
                 del symbols[:]
                     
@@ -300,35 +356,31 @@ if __name__ == "__main__":
     parser.add_argument('out_dir', type=str, help='Output directory')
     parser.add_argument('max_depth', type=int, help='Maximum concept depth')
     parser.add_argument('-s', '--start',action='store',default=1, type=int, help='Starting depth')
-    parser.add_argument('-c', '--conc',action='store',default=50, type=int, help='Max number of concepts in file')
-    parser.add_argument('--fast', action='store_true', help='Prunning with cardinality')
-    parser.add_argument('--std', action='store_true', help='Standard sound prunning')
-    parser.add_argument('--mix', action='store_true', help='Cardinality + standard prunning')
+    parser.add_argument('--exp',default=50, type=int, help='Max number of expressions in prunning set')
+    parser.add_argument('--conc',default=50, type=int, help='Max number of concepts in file')
+    
+    group_compare = parser.add_mutually_exclusive_group(required = False)
+    group_compare.add_argument('--fast', action='store_const', dest='compare', help='Prunning with cardinality',
+        const=CompareConcept.FAST, default=CompareConcept.STANDARD)
+    group_compare.add_argument('--std', action='store_const', dest='compare', help='Standard sound prunning',
+        const=CompareConcept.STANDARD)
+    group_compare.add_argument('--mix', action='store_const', dest='compare', help='Cardinality + standard prunning',
+        const=CompareConcept.MIXED)
+    
     parser.add_argument('-d', '--debug',help="Print debugging statements",
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
     parser.add_argument('--proc',help="Runs clingo solver in separate process",
         action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
-    parser.add_argument('--batch',help="Number of concept files used for prunning at the same time",
-        type=int)
-    args = parser.parse_args()
-    print(sys.path)
-    logging.basicConfig(level=args.loglevel)
-    if sum((int(b) for b in (args.fast, args.std, args.mix))) > 1:
-        RuntimeError('More than one prunning type specified')
 
-    comp_type = 'fast' if args.fast else None
-    comp_type = 'standard' if args.std else comp_type
-    comp_type = 'mixed' if args.mix else comp_type
-    comp_type = 'standard' if comp_type is None else comp_type    
-    print(comp_type)
+    args = parser.parse_args()
+    logging.basicConfig(level=args.loglevel)
+
+    print(args.compare)
     Solver.set_default(args.solver)
     print(args.solver)
-    grammar = Grammar(args.sample,args.out_dir, comp_type=comp_type)
+    grammar = Grammar(args.sample,args.out_dir, comp_type=args.compare)
     import time
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
-    #grammar.loadProgress(args.start)
-    #for c in grammar.conceptIterator():
-    #    print(c.file)
-    grammar.expandGrammar(args.start, args.max_depth, logg=True, max_conc=args.conc, batch=args.batch)
+    grammar.expandGrammar(args.start, args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
     print("Took {}s.".format(round(time.time()-start, 2)))

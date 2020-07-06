@@ -110,12 +110,12 @@ group(C, (C - M - first) / gsize + 1) :- conc(C, _), min(M), C - M >= first.
 set(C, X) :- exp(C, _),
     Before = #count{D : exp(D, _), D < C},
     X = Before/max_exp.
-exp_groups((Count + max_exp - 1)/max_exp) :- Count = #count{C : exp(C, _)}.
+atom_groups((Count + max_exp - 1)/max_exp) :- Count = #count{C : exp(C, _)}.
 
-set(C, ExpG + X) :- conc(C, _), exp_groups(ExpG),
+set(C, ExpG + X) :- conc(C, _), atom_groups(ExpG),
     Before = #count{D : conc(D, _), D < C},
     X = Before/max_conc.
-conc_groups((Count + max_conc - 1)/max_conc) :- Count = #count{C : conc(C, _)}.
+comp_groups((Count + max_conc - 1)/max_conc) :- Count = #count{C : conc(C, _)}.
 %Prune redundant expressions inside set num and add output to set out
 #program join_set(num_1, num_2, out).
 candidate(C, out) :- set(C, num_1).

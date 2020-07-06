@@ -1,5 +1,6 @@
 from pathlib import Path
-
+from typing import List
+import clingo
 class Logic:
     logicPath = Path(__file__).parent.absolute()
     #logicPath = Path('/home/ivan/Documents/ai/features/features')
@@ -20,44 +21,7 @@ class Logic:
     divide = ('divide', [])
 
     transitions = ('transitions', [])
-    
-class Concept:
-    cardinality = ('cardinality', [])
-    compareExp = ('compare_exp', [])
-    keepExp = ('keep_exp', [])
-    pruneExp = ('prune_exp', [])
-    compareExpConc = ('compare_exp_conc', [])
 
-    @staticmethod
-    def numberConc(start, first, gsize):
-        return ('number_conc', [start, first, gsize])
-
-    classify = ('classify', [])
-    #classifyExp = ('classify_exp', [])
-
-    @staticmethod
-    def primitive(depth):
-        return ('primitive', [depth])
-    
-    @staticmethod
-    def negation(depth):
-        return ('negation', [depth])
-
-    @staticmethod
-    def equalRole(depth):
-        return ('equal_role', [depth])
-
-    @staticmethod
-    def conjunction(depth, in1, in2):
-        return ('conjunction', [depth, in1, in2])
-
-    @staticmethod
-    def uni(depth):
-        return ('uni', [depth])
-        
-    @staticmethod
-    def exi(depth):
-        return ('exi', [depth])
 
 class Feature:
     processFeat = ('feature', [])

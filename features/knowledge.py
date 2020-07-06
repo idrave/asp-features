@@ -8,21 +8,20 @@ import re
 from enum import Enum
 import logging
 import os
+from comparison import Comparison
 from typing import List, Tuple, Union, Optional
 
 def splitSymbols(symbols, start_id, first_size, id_prog, get_prog, max_conc=50):
     with ClingoSolver() as ctl:
         ctl.addSymbols(symbols)
         ctl.load(Logic.pruneFile)
-        print(id_prog(start_id, first_size, max_conc))
         ctl.ground([Logic.base, id_prog(start_id, first_size, max_conc)])
         ctl.solve()
         group_n = None
         atom_n = None
         group_n = ctl.getAtoms('groups', 1)[0].arguments[0].number
         atom_n = ctl.getAtoms('count', 1)[0].arguments[0].number
-        print(group_n, atom_n, ctl.countAtoms('group', 2))
-        print(get_prog)
+        logging.debug('Split groups: {}. Atoms: {}'.format(group_n, atom_n))
         ctl.ground([get_prog])
         result = []
         for i in range(group_n):
@@ -47,43 +46,7 @@ def number_symbols(symbols, start_id, id_prog):
 
     return atom_n, symbols
 
-class Comparison:
-    def __init__(self, comp_type='standard'):
-        self.file = str(Logic.logicPath/'differ.lp')
-        types = {
-            'standard' : self.__standardCompare,
-            'fast' : self.__fastCompare,
-            'mixed' : self.__mixedCompare,
-            'feature' : self.__featureCompare
-        }
-        self.type = types.get(comp_type, None)
-        if self.type is None:
-            raise RuntimeError("Invalid comparison type.")
 
-    def __call__(self, ctl):
-        self.type(ctl)
-
-    def __standardCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('standard_differ', [])])
-        ctl.solve()
-
-    def __fastCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('fast_differ', [])])
-        ctl.solve()
-    
-    def __mixedCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('optimal_differ_start', [])])
-        ctl.solve()
-        ctl.ground([('optimal_differ_end', [])])
-        ctl.solve()
-
-    def __featureCompare(self, ctl):
-        ctl.load(str(self.file))
-        ctl.ground([('feature_differ', [])])
-        ctl.solve()
 #TODO add option to load files incrementaly instead of all at once
 def prune_symbols(symbols: List[clingo.Symbol], prune_file: str,
                   compare_prog: Tuple, compare: Comparison, prune_prog: Tuple,
@@ -193,7 +156,7 @@ class ClingoOps(Enum):
         if op == ClingoOps.GET: return ctl.getAtoms
         if op == ClingoOps.CLEAN: return ctl.cleanup
         if op == ClingoOps.EXTERNAL: return ctl.getExternals
-        raise ValueError('{} is not a valid ClingoOps')
+        raise ValueError('{} is not a valid ClingoOps'.format(op))
 
 class ClingoProcess:
     
