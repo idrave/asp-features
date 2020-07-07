@@ -11,6 +11,10 @@ class Pruneable:
         raise NotImplementedError()
 
     @staticmethod
+    def show_set(set):
+        raise NotImplementedError()
+
+    @staticmethod
     def join_set(in1, in2, out):
         return ('join_set', [in1, in2, out])
 
@@ -21,10 +25,6 @@ class Pruneable:
     @staticmethod
     def difference_set(in1, in2, out):
         return ('difference_set', [in1, in2, out])
-
-    @staticmethod
-    def show_set(set):
-        raise NotImplementedError()
 
     @staticmethod
     def prune_atom(ctl, exp_groups, start, comp : Comparison):

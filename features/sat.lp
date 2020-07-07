@@ -20,30 +20,29 @@ relevant(S) :- relevant(S, _).
 relevant(S) :- relevant(_, S).
 
 %%%%%%%%%%%%%%%%%
-selected(F) :- feature(F).
+%selected(F) :- feature(F).
 %%%%%%%%%%%%%%%%%
-
 
 d1(S, T) :- feature(F), selected(F), relevant(S), state(T),
             qualValue(F, A, S), qualValue(F, B, T), not A = B.
-%*
-1 {selected(F) :    feature(F), qualValue(F, A, S),
-                    qualValue(F, B, T), not A = B} :- d1(S, T), relevant(S), state(T).
-*%
-% Rule (2). Define d2
-%*
-d2(S1, S2, T1, T2) :-   feature(F), selected(F), relevant(S1, S2), transition(T1, T2),
-                        delta(S1, S2, F, A), delta(T1, T2, F, B), not A = B.*%
 
-% Rule (3). Enforce soundness and completeness
-%*
+%1 {selected(F) :    feature(F), qualValue(F, A, S),
+%                    qualValue(F, B, T), not A = B} :- d1(S, T), relevant(S), state(T).
+
+% Rule (2). Define d2
+
+%d2(S1, S2, T1, T2) :-   feature(F), selected(F), relevant(S1, S2), transition(T1, T2),
+%                        delta(S1, S2, F, A), delta(T1, T2, F, B), not A = B.
+
 1 {selected(F) :    feature(F), delta(S1, S2, F, A), 
                     delta(T1, T2, F, B), not A = B} :- d2(S1, S2, T1, T2), relevant(S1, S2), transition(T1, T2).
 
+% Rule (3). Enforce soundness and completeness
+
 1 {-d2(S1, S2, T1, T2) : transition(T1, T2)} :- not d1(S1, T1), relevant(S1, S2), state(T1).
-*%
+
 % Rule (4). Differentiate goal from non-goals
 d1(S, T) :- relevant(S), state(T), {goal(S;T)} = 1.
 
 % Find optimal model minimizing sum of feature costs
-%#minimize {N, F : selected(F), cost(F, N)}.
+#minimize {N, F : selected(F), cost(F, N)}.

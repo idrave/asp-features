@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols, count_symbols, get_symbols
 from features.logic import Logic
-from features.knowledge import ConceptFile, splitSymbols, Solver, prune_symbols
+from knowledge import ConceptFile, splitSymbols, Solver, prune_symbols #TODO make ALL imports in all files from feature module
 from comparison import CompareConcept
 from typing import List, Tuple
 from prune import Pruneable
@@ -159,7 +159,7 @@ def const_state(sample):
 
 
 class Grammar:
-    def __init__(self, sample, path, comp_type='standard'):
+    def __init__(self, sample, path, comp_type=CompareConcept.STANDARD):
         self.samplePath = sample
         self.path = Path(path)
         self.concepts = {}

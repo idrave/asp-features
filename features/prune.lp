@@ -116,6 +116,19 @@ set(C, ExpG + X) :- conc(C, _), atom_groups(ExpG),
     Before = #count{D : conc(D, _), D < C},
     X = Before/max_conc.
 comp_groups((Count + max_conc - 1)/max_conc) :- Count = #count{C : conc(C, _)}.
+
+%Split expressions in sets of maximum size max_exp
+#program split_features(max_pre, max_feat).
+set(C, X) :- prefeature(C),
+    Before = #count{D : prefeature(D), D < C},
+    X = Before/max_pre.
+atom_groups((Count + max_pre - 1)/max_pre) :- Count = #count{C : prefeature(C)}.
+
+set(C, ExpG + X) :- feature(C), atom_groups(ExpG),
+    Before = #count{D : feature(D), D < C},
+    X = Before/max_feat.
+comp_groups((Count + max_feat - 1)/max_feat) :- Count = #count{C : feature(C)}.
+
 %Prune redundant expressions inside set num and add output to set out
 #program join_set(num_1, num_2, out).
 candidate(C, out) :- set(C, num_1).
@@ -141,6 +154,15 @@ set(C, num) :- candidate(C, num), differ(C, D) : compare(C, D, num).
 #show exp(C, N) : exp(C, N), set(C, num).
 #show belong(X, C, S) : belong(X, C, S), exp(C, _), set(C, num).
 #show cardinality(C, N, S) : cardinality(C, N, S), exp(C, _), set(C, num).
+
+#program show_features(num).
+#show bool(F) : bool(F), set(F, num).
+#show num(F) : num(F), set(F, num).
+#show prefeature(F) : set(F, num).
+#show cost(F, N) : cost(F, N), set(F, num).
+#show qualValue(F, V, S) : qualValue(F, V, S), set(F, num).
+#show delta(S, T, F, V) : delta(S, T, F, V), set(F, num).
+
 %%%%%%%%%%%% Features %%%%%%%%%%%% 
 
 #program compare_prefeature.

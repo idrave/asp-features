@@ -21,22 +21,3 @@ class Logic:
     divide = ('divide', [])
 
     transitions = ('transitions', [])
-
-
-class Feature:
-    processFeat = ('feature', [])
-    comparePreFeature = ('compare_prefeature', [])
-    compareFeature = ('compare_feature', [])
-    pruneFeature = ('prune_feature', [])
-    @staticmethod
-    def numberFeat(start):
-        return ('number_feat', [start])
-    @staticmethod
-    def divide_feat(start, first, gsize):
-        return ('divide_feat', [start, first, gsize])
-    classifyFeat = ('classify_feat', [])
-    primitiveFeature = ('primitiveFeature', [])
-    conceptFeature = ('conceptFeature', [])
-    @staticmethod
-    def distFeature(k):
-        return ('distFeature', [k])

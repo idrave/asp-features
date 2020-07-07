@@ -1,13 +1,42 @@
 from features.knowledge import Solver, ConceptFile, prune_symbols, Comparison, number_symbols
 import logging
 from features.model_util import write_symbols, count_symbols, get_symbols
-from features.logic import Logic, Concept, Feature
-from features.grammar import Grammar
+from features.logic import Logic
+from features.grammar import Grammar, Concept
+from features.prune import Pruneable
+from features.comparison import CompareFeature
 from typing import List, Union
 from pathlib import Path
 import clingo
 from argparse import ArgumentParser
 import os
+
+class Feature(Pruneable):
+    prune_file = str(Logic.logicPath/'prune.lp')
+    processFeat = ('feature', [])
+    comparePreFeature = ('compare_prefeature', [])
+    compareFeature = ('compare_feature', [])
+    pruneFeature = ('prune_feature', [])
+    @staticmethod
+    def numberFeat(start):
+        return ('number_feat', [start])
+    @staticmethod
+    def divide_feat(start, first, gsize):
+        return ('divide_feat', [start, first, gsize])
+    classifyFeat = ('classify_feat', [])
+    primitiveFeature = ('primitiveFeature', [])
+    conceptFeature = ('conceptFeature', [])
+    @staticmethod
+    def distFeature(k):
+        return ('distFeature', [k])
+
+    @staticmethod
+    def init_sets(max_pre, max_feat):
+        return ('split_features', [max_pre, max_feat])
+
+    @staticmethod
+    def show_set(set):
+        return ('show_features', [set])
 
 class Nullary:
     def __init__(self, sample, transitions):
@@ -67,7 +96,7 @@ class Features:
         self.features = str(self.path/'features.lp')
         with open(self.features, 'w'): pass
         self.total_features = 0
-        self.compare = Comparison(comp_type='feature')
+        self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
 
     def list_features(self, max_cost, batch=1, distance=False):
         ans = []
@@ -91,6 +120,12 @@ class Features:
             files=[self.features])
         return symbols
 
+    def prune(self, features, max_pre, max_feat):
+        return Feature.prune_symbols(
+                    features, self.features, self.compare,
+                    max_atoms=max_pre, max_comp=max_feat
+                )
+
     def addFeatures(self, symbols):
         feat_n, symbols = number_symbols(
             symbols,
@@ -107,7 +142,7 @@ class Features:
         self.transitions = str(self.path/'transitions.lp')
         write_symbols(symbols, self.transitions)
 
-    def generate(self, max_cost=8, batch=1, distance=False):
+    def generate(self, max_cost=8, batch=1, max_pre=50, max_feat=50, distance=False):
         logging.debug('Features with max cost {}'.format(max_cost))
         self.add_transitions()
 
@@ -117,14 +152,7 @@ class Features:
             logging.debug('Initial features: {}'.format(count_symbols(symbols, 'prefeature', 1)))
             logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
             logging.debug('Initial num: {}'.format(count_symbols(symbols, 'num', 1)))
-            symbols = prune_symbols(
-                symbols,
-                Logic.pruneFile,
-                Feature.comparePreFeature,
-                self.compare,
-                Feature.pruneFeature
-            )
-            symbols = self.difference(symbols)
+            symbols = self.prune(symbols, max_pre, max_feat)
             self.addFeatures(symbols)
             del symbols[:]
         print('Generated {} features'.format(self.total_features))
@@ -141,8 +169,10 @@ if __name__ == "__main__":
     parser.add_argument('--proc',help="Runs clingo solver in separate process",
         action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
     parser.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
+    parser.add_argument('--atom',default=50, type=int, help='Max new features prunned together')
+    parser.add_argument('--comp',default=50, type=int, help='Max number of known features used for prunning simultaneously')
 
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
     features = Features(args.sample, args.concepts, args.out_dir)
-    features.generate(max_cost=args.max_cost, batch=args.batch, distance=args.dist)
+    features.generate(max_cost=args.max_cost, batch=args.batch, max_pre=args.atom, max_feat=args.comp, distance=args.dist)

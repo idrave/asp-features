@@ -5,7 +5,7 @@ class Comparison:
     def __init__(self, type_dict: dict, comp_type: int):
         self.type_ = type_dict.get(comp_type, None)
         if self.type_ is None:
-            raise RuntimeError("Invalid comparison type {}.".format(self.type_))
+            raise RuntimeError("Invalid comparison type {}.".format(comp_type))
         self.__compare, self.__compare_set = self.type_
 
     def compare(self, ctl):
@@ -69,6 +69,7 @@ class CompareFeature(Comparison):
     STANDARD = 1
 
     def __init__(self, comp_type = STANDARD):
+        self.file = str(Logic.logicPath/'differ.lp')
         def feature(self, ctl):
             ctl.load(str(self.file))
             ctl.ground([('feature_differ', [])])
@@ -76,7 +77,7 @@ class CompareFeature(Comparison):
 
         def feature_set(self, ctl, num):
             ctl.load(str(self.file))
-            ctl.ground([('feature_differ_set', [])])
+            ctl.ground([('feature_differ_set', [num])])
             ctl.solve()
 
         types = {

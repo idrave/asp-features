@@ -9,9 +9,8 @@ relevant_simple = ['has','variable','initialState','constant','goalState','state
 relevant_plasp = [('has',2),('variable',1),('initialState',1),('constant',1),('goalState',1),('state',2),('holdsState',3),('transition',2)]        
 relevant_clingo = [('pred',1),('arity',2),('const',1),('state',1),('hold',2),('hold',3),('transition',2),('relevant',2),('goal',1)]
 
-
 def onmodel(m: clingo.Model):
-    #print(m)
+    
     symbols = m.symbols(atoms=True)
     count_state = 0
     count_transition = 0

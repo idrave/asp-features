@@ -59,3 +59,7 @@ differ(C1, C2) :-   equiv_card(C1, C2, num),
 #program feature_differ.
 differ(F, G) :- compare(F, G), qualValue(F, V, S), not qualValue(G, V, S).
 differ(F, G) :- compare(F, G), delta(S, T, F, V), not delta(S, T, G, V).
+
+#program feature_differ_set(num).
+differ(F, G) :- compare(F, G, num), qualValue(F, V, S), not qualValue(G, V, S).
+differ(F, G) :- compare(F, G, num), delta(S, T, F, V), not delta(S, T, G, V).
