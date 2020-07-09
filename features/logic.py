@@ -1,9 +1,14 @@
 from pathlib import Path
 from typing import List
 import clingo
+
+PLASP_PATH = '/home/ivan/Documents/ai/features/plasp/plasp/build/release/bin/plasp'
+
 class Logic:
     logicPath = Path(__file__).parent.absolute()
     #logicPath = Path('/home/ivan/Documents/ai/features/features')
+    sample_file = str(logicPath/'sample/expand_states.lp')
+    sample_encoding = str(logicPath/'sample/encoding.lp')
     grammarFile = str(logicPath/'concept.lp')
     featureFile = str(logicPath/'features.lp')
     base = ('base', [])

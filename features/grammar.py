@@ -9,7 +9,9 @@ import os
 from pathlib import Path
 from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols, count_symbols, get_symbols
 from features.logic import Logic
-from knowledge import ConceptFile, splitSymbols, Solver, prune_symbols #TODO make ALL imports in all files from feature module
+from knowledge import ConceptFile, splitSymbols
+import features.solver as solver
+from features.solver import SolverType
 from comparison import CompareConcept
 from typing import List, Tuple
 from prune import Pruneable
@@ -67,7 +69,7 @@ class Primitive:
 
     def __call__(self):
         logging.debug('Calling Primitive')
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.sample])
             ctl.ground([Logic.base, Concept.primitive(1), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -79,7 +81,7 @@ class Negation:
         self.primitive = primitive
     def __call__(self):
         logging.debug('Calling Negation({})'.format(self.primitive.name))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.primitive.file, self.sample])
             ctl.ground([Logic.base, Concept.negation(2), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -93,7 +95,7 @@ class EqualRole:
 
     def __call__(self):
         logging.debug('Calling EqualRole')
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.roles, self.sample])
             ctl.ground([Logic.base, Concept.equalRole(3), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -107,7 +109,7 @@ class Conjunction:
 
     def __call__(self):
         logging.debug('Calling Conjunction({},{})'.format(self.concept1.name, self.concept2.name))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.concept1.file, self.concept2.file, self.sample])
             depth = self.concept1.depth + self.concept2.depth + 1
             ctl.ground([Logic.base, Concept.conjunction(depth, self.concept1.depth, self.concept2.depth), Concept.keepExp])
@@ -122,7 +124,7 @@ class Uni:
 
     def __call__(self):
         logging.debug('Calling Uni({})'.format(self.concept.name))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.uni(depth), Concept.keepExp])
@@ -136,7 +138,7 @@ class Exi:
         self.roles = roles
     def __call__(self):
         logging.debug('Calling Exi({})'.format(self.concept.name))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.exi(depth), Concept.keepExp])
@@ -144,14 +146,14 @@ class Exi:
         return result
 
 def roles(sample):
-    with Solver.open() as ctl:
+    with solver.create_solver() as ctl:
         ctl.load([sample, Logic.grammarFile])
         ctl.ground([Logic.base, Logic.roles, Logic.keepRoles])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
     return result
 
 def const_state(sample):
-    with Solver.open() as ctl:
+    with solver.create_solver() as ctl:
         ctl.load([sample, Logic.pruneFile])
         ctl.ground([Logic.base, Logic.simplifySample])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -199,7 +201,7 @@ class Grammar:
     
     def addRoles(self):
         symbols = roles(self.samplePath)
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load(Logic.pruneFile)
             ctl.addSymbols(symbols)
             ctl.ground([Logic.base, Logic.index_role(0)])
@@ -262,18 +264,6 @@ class Grammar:
                     l = []
         if len(l):
             yield l
-    #TODO add customizable batch sizes to prunning.
-    def difference(self, expression_set: List[clingo.Symbol], batch=1) -> List[clingo.Symbol]:
-        for conc in self.batchIterator(batch = batch):
-            logging.debug('Prune with {}'.format([c.name for c in conc]))
-            expression_set = prune_symbols(
-                expression_set,
-                Logic.pruneFile,
-                Concept.compareExpConc,
-                self.compare,
-                Concept.pruneExp,
-                files=[c.file for c in conc])
-        return expression_set
 
     def prune(self, expressions, max_exp, max_conc):
         concept_files = [conc.file for conc in self.get_concepts()]
@@ -370,13 +360,13 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--debug',help="Print debugging statements",
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
     parser.add_argument('--proc',help="Runs clingo solver in separate process",
-        action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
+        action="store_const", dest="solver", const=SolverType.PROCESS, default=SolverType.SIMPLE)
 
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
 
     print(args.compare)
-    Solver.set_default(args.solver)
+    solver.set_default(args.solver)
     print(args.solver)
     grammar = Grammar(args.sample,args.out_dir, comp_type=args.compare)
     import time

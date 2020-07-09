@@ -1,6 +1,6 @@
 from features.comparison import Comparison
 import clingo
-from knowledge import Solver
+import features.solver as solver
 from typing import List
 
 class Pruneable:
@@ -68,7 +68,7 @@ class Pruneable:
 
     @classmethod
     def prune_symbols(cls, symbols: List[clingo.Symbol], comp_symbols, comp: Comparison, max_atoms = 1, max_comp = 1):
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load(cls.prune_file)
             ctl.load(comp_symbols)
             ctl.addSymbols(symbols)

@@ -1,4 +1,6 @@
-from features.knowledge import Solver, ConceptFile, prune_symbols, Comparison, number_symbols
+from features.knowledge import ConceptFile, Comparison, number_symbols
+import features.solver as solver
+from features.solver import SolverType
 import logging
 from features.model_util import write_symbols, count_symbols, get_symbols
 from features.logic import Logic
@@ -8,6 +10,7 @@ from features.comparison import CompareFeature
 from typing import List, Union
 from pathlib import Path
 import clingo
+import sys
 from argparse import ArgumentParser
 import os
 
@@ -45,7 +48,7 @@ class Nullary:
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling Nullary')
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.featureFile, self.sample, self.transitions])
             ctl.ground([Logic.base, Feature.primitiveFeature, Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -59,7 +62,7 @@ class ConceptFeat:
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling ConceptFeat({})'.format([c.name for c in self.concepts]))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.featureFile, self.sample, self.transitions] + [conc.file for conc in self.concepts])
             ctl.ground([Logic.base, Feature.conceptFeature, Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -75,14 +78,14 @@ class Distance:
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling ConceptFeat({})'.format(self.concepts.name))
-        with Solver.open() as ctl:
+        with solver.create_solver() as ctl:
             ctl.load([Logic.featureFile, self.sample, self.transitions, self.roles] + [conc.file for conc in self.concepts])
             ctl.ground([Logic.base, Feature.distFeature(self.max_cost), Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
 
 def get_transitions(sample):
-    with Solver.open() as ctl:
+    with solver.create_solver() as ctl:
         ctl.load([sample, Logic.pruneFile])
         ctl.ground([Logic.base, Logic.transitions])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -94,9 +97,19 @@ class Features:
         self.concepts = Grammar(sample, concept_path)
         self.path = Path(output)
         self.features = str(self.path/'features.lp')
-        with open(self.features, 'w'): pass
+        
         self.total_features = 0
         self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
+
+    def createDir(self):
+        print(self.path.absolute())
+        if not self.path.is_dir():
+            try:
+                self.path.mkdir()
+                with open(self.features, 'w'): pass
+            except (FileNotFoundError, FileExistsError) as e:
+                print(repr(e))
+                sys.exit()
 
     def list_features(self, max_cost, batch=1, distance=False):
         ans = []
@@ -108,17 +121,6 @@ class Features:
         if distance:
             pass #TODO
         return ans
-
-    def difference(self, symbols, batch=10):
-        logging.debug('Prune with existing features')
-        symbols = prune_symbols(
-            symbols,
-            Logic.pruneFile,
-            Feature.compareFeature,
-            self.compare,
-            Feature.pruneFeature,
-            files=[self.features])
-        return symbols
 
     def prune(self, features, max_pre, max_feat):
         return Feature.prune_symbols(
@@ -144,6 +146,7 @@ class Features:
 
     def generate(self, max_cost=8, batch=1, max_pre=50, max_feat=50, distance=False):
         logging.debug('Features with max cost {}'.format(max_cost))
+        self.createDir()
         self.add_transitions()
 
         features = self.list_features(max_cost, batch=batch, distance=distance)
@@ -167,7 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--debug',help="Print debugging statements",
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
     parser.add_argument('--proc',help="Runs clingo solver in separate process",
-        action="store_const", dest="solver", const=Solver.PROCESS, default=Solver.SIMPLE)
+        action="store_const", dest="solver", const=SolverType.PROCESS, default=SolverType.SIMPLE)
     parser.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
     parser.add_argument('--atom',default=50, type=int, help='Max new features prunned together')
     parser.add_argument('--comp',default=50, type=int, help='Max number of known features used for prunning simultaneously')
