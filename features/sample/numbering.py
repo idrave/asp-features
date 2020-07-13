@@ -1,4 +1,4 @@
-from features.knowledge import ClingoSolver
+from features.solver import ClingoSolver
 from features.logic import Logic
 from features.model_util import write_symbols
 import argparse

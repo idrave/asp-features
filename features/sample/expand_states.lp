@@ -1,4 +1,12 @@
-#show state/2.
+#show.
+#defined initialState/1.
+#defined contains/3.
+#defined mutexGroup/1.
+#defined derivedVariable/1.
+#defined precondition/4.
+#defined postcondition/5.
+#defined derivedPredicate/2.
+#defined state/2.
 #program expand(depth).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -86,9 +94,16 @@ newState(State, depth) :-
 state(State, depth) :- newState(State, depth),
     different(State, S) : newState(S, depth), S < State.
 
-goalState(State) :- goal(State), state(State, depth).
-holdsState(Variable, Value, State) :- holds(Variable, Value, State), state(State, depth).
-
 transition(State, Other) :-
     state(State, depth-1), validAction(Action, State, depth), state(Other, _),
     compare(apply(Action, State), Other, depth), not different(apply(Action, State), Other).
+
+#show state(S, D) : state(S, D).
+#show state(S) : state(S, _).
+#show goal(G) : goal(G), state(G, _).
+#show transition(S, T) : transition(S, T).
+#show has(X, T) : has(X, T).
+#show variable(V) : variable(V).
+#show initialState(S) : initialState(S).
+#show constant(X) : constant(X).
+#show holds(Var, V, S) : holds(Var, V, S), state(S, _).

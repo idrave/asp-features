@@ -3,78 +3,215 @@ import subprocess
 import features.solver as solver
 import features.logic
 from features.logic import Logic
-from features.model_util import get_symbols
-from typing import List
+from features.model_util import SymbolSet, write_symbols
+from typing import List, Optional
+import argparse
 
 def run_plasp(in_file):
     return subprocess.run([features.logic.PLASP_PATH, 'translate', in_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
+
+#TODO add numbering
 
 class Instance:
     def __init__(self, pddl):
         self.pddl = pddl
         self.rules = run_plasp(self.pddl)
-        self.depth = None
-        self.state_n = 0
-        self.transition_n = 0
-        self.goal = False
+        self.__depth = None
+        self.__complete = False
+        self.symbols = None
+        self.__init_encoding()
+        
+    def __init_encoding(self):
+        def get_null_pred(variables):
+            nulls = []
+            for var in variables:
+                pred = var.arguments[0].arguments[0]
+                if(pred.type == clingo.SymbolType.String):
+                    nulls.append(pred.string)
+            return nulls
+
+        with solver.create_solver() as ctl:
+            self.init_solver(ctl)
+            ctl.ground([(Logic.base)])
+            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(atoms=True))
+            assert(len(symbols) == 1)
+            variables = SymbolSet(symbols[0]).get_atoms('variable', 1)
+            #Add predicates of arity '0
+            ctl.addSymbols([clingo.Function('arity', [n, 0]) for n in get_null_pred(variables)])
+
+            ctl.ground([('predicates', []), ('const', [])])
+            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(symbols) == 1)
+            symset = SymbolSet(symbols[0])
+            self.__pred = symset.get_atoms('pred', 1)
+            self.__arity = symset.get_atoms('arity', 2)
+            self.__const = symset.get_atoms('const', 1)
+
+
+    def init_solver(self, ctl):
+        ctl.load(Logic.sample_file)
+        ctl.load(Logic.sample_encoding)
+        ctl.add('base', [], self.rules)
+        if self.symbols is not None:
+            ctl.addSymbols(self.symbols.get_all_atoms())
 
     def get_rules(self):
         return self.rules
 
-    def init_solver(self):
-        self.solver = solver.create_solver()
-        self.solver.open()
-        self.solver.load(Logic.sample_file)
-        self.solver.load(Logic.sample_encoding)
-        self.solver.add('base', [], self.pddl)
-        self.solver.ground(Logic.base)
-
-    def close_solver(self):
-        self.solver.close()
+    def is_complete(self):
+        return self.__complete
 
     def next_depth(self):
         return 0 if self.depth is None else self.depth + 1
 
     def expand(self):
-        self.solver.ground([("expand", [self.next_depth()])])
-        self.solver.solve()
-        self.solver.cleanup()
-        self.solver.ground([("prune", [self.next_depth()])])
-        summary = self.solver.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        self.solver.cleanup()
-        self.state_n = get_symbols(summary, 'state_count', 1)[0].number
-        self.transition_n = get_symbols(summary, 'transition_count', 1)[0].number
-        self.goal = get_symbols(summary, 'goal_count', 1)[0].number > 0
+        with solver.create_solver() as ctl:
+            self.init_solver(ctl)
+            ctl.ground([('base', []), ("expand", [self.next_depth()])])
+            ctl.solve()
+            ctl.cleanup()
+            ctl.ground([("prune", [self.next_depth()])])
 
-    def encode(self):
-        self.solver.ground(['encode', []])
-        symbols = self.solver.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-        return symbols
+            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(symbols) == 1)
+            symbols = symbols[0]
+            ctl.cleanup()
+            
+            symbols = SymbolSet(symbols)
+            new_states = symbols.count_atoms('state', 1)
+            if new_states == self.state_number():
+                self.__complete = True
+            else:
+                self.__depth = self.next_depth()
+            self.symbols = symbols
+
+    def state_number(self):
+        if self.symbols is None: return 0
+        return self.symbols.count_atoms('state', 1)
+
+    def transition_number(self):
+        if self.symbols is None: return 0
+        return self.symbols.count_atoms('transition', 2)
+
+    @property
+    def depth(self):
+        return self.__depth
+
+    def is_goal(self):
+        if self.symbols is None: return False
+        return self.symbols.count_atoms('goal', 1) > 0
+
+    def get_states(self):
+        if self.symbols is None: return []
+        return self.symbols.get_atoms('state', 1)
+
+    def get_predicates(self):
+        return self.__pred + self.__arity
+
+    def get_const(self):
+        return self.__const
+
+    def get_transitions(self):
+        if self.symbols is None: return []
+        return self.symbols.get_atoms('transition', 2)
+
+    def get_goal(self):
+        if self.symbols is None: return []
+        return self.symbols.get_atoms('goal', 1)
+
+    def get_encoding(self):
+        with solver.create_solver() as ctl:
+            self.init_solver(ctl)
+            ctl.addSymbols(self.get_predicates() + self.get_const())
+            ctl.ground([('base', []), ('hold', [])])            
+            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(symbols) == 1)
+
+        return symbols[0] + self.get_predicates() + self.get_const() + \
+               self.get_states() + self.get_transitions() + self.get_goal()
 
 
 class Sample:
     def __init__(self, instances: List[Instance]):
         self.instances = instances
 
-    def init_solvers(self):
-        self.solvers = []
-        for inst in self.instances:
-            self.solvers.append(solver.create_solver())
-            self.solvers[-1].open()
-            self.solvers[-1].load(Logic.sample_file)
-            self.solvers[-1].load(Logic.sample_encoding)
-            self.solvers[-1].add('base', [], inst.pddl)
-            
+    def expand_states(self, depth=None, states=None, transitions=None, goal_req=False, complete=False):
+        d = -1
+        s_n = 0
+        t_n = 0
+        stop = False
 
-    def close_solvers(self):
-        for s in self.solvers:
-            s.close()
+        while not stop:
+            print('Expanding depth {}'.format(d+1))
+            stop = True
+            for instance in self.instances:
+                if (depth != None and d < depth) or (states != None and s_n < states) \
+                        or (transitions != None and t_n < transitions) \
+                        or (goal_req and not instance.is_goal()) or (complete and not instance.is_complete()):
+                    instance.expand()
+                    stop = False
+            if not stop:
+                d += 1
+                s_n = 0
+                t_n = 0
+                for instance in self.instances:
+                    s_n += instance.state_number()
+                    t_n += instance.transition_number()
+                print('States {}. Transitions {}.'.format(s_n, t_n))
 
-    def expand_states(self, depth=None, min_state=None, goal_req=True):
-        d = 0
-        state_n = 0
-        goal = False
+        self.depth = depth
+        self.state_count = s_n
+        self.transition_count = t_n
 
-        while (depth != None and d < depth) or (min_state != None and state_n < min_state) \
-              or (goal_req and not goal):
-            pass
+    def is_goal(self):
+        return all([inst.is_goal for inst in self.instances])
+
+    def is_complete(self):
+        return all([inst.is_complete for inst in self.instances])
+
+    def get_states(self) -> List[clingo.Symbol]:
+        states = []
+        for instance in self.instances:
+            states += instance.get_states()
+        return states
+
+    def get_const(self) -> List[clingo.Symbol]:
+        const = {}
+        for instance in self.instances:
+            for c in instance.get_const():
+                const[c] = True
+        return const.keys()
+
+    def get_transitions(self) -> List[clingo.Symbol]:
+        transitions = []
+        for instance in self.instances:
+            transitions += instance.get_transitions()
+        return transitions
+
+    def get_sample(self) -> List[clingo.Symbol]:
+        result = []
+        for instance in self.instances:
+            result += instance.get_encoding()
+        return result
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pddl', nargs='+', required=True, help='Input instances in PDDL files')
+    parser.add_argument('-d', '--depth', default=6, type=int, help='Minimum expansion depth required')
+    parser.add_argument('-s', dest='states', type=int, help='Minimum number of states required')
+    parser.add_argument('-t', dest='transitions', type=int, help='Minimum number of transitions required')
+    parser.add_argument('--complete', action='store_true', help='Expand all state space (could be too big!)')
+    parser.add_argument('--goal', action='store_true', help='Ensure there is at least one goal per instance')
+    parser.add_argument('--out', required=True, help='Output file path')
+    args = parser.parse_args()
+    instances = [Instance(p) for p in args.pddl]
+    sample = Sample(instances)
+    sample.expand_states(
+        depth=args.depth,
+        states=args.states,
+        transitions=args.transitions,
+        goal_req=args.goal,
+        complete=args.complete
+    )
+
+    write_symbols(sample.get_sample(), args.out)

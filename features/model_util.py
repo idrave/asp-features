@@ -2,6 +2,7 @@ import clingo
 from features.logic import Logic
 import logging
 import os
+from typing import List
 
 def to_model_list(solve_handle):
     return [model for model in solve_handle]
@@ -41,6 +42,57 @@ def filter_symbols(ctl, single=True):
 
 def get_symbols(symbols, name, arity):
     return list(filter(lambda s: s.match(name, arity), symbols))
+
+class SymbolSet:
+    def __init__(self, symbols: List[clingo.Symbol]):
+        self.__numbers = []
+        self.__strings = []
+        self.__func = {}
+        for sym in symbols:
+            assert(isinstance(sym, clingo.Symbol))
+            if sym.type == clingo.SymbolType.Number:
+                self.__numbers.append(sym)
+            elif sym.type == clingo.SymbolType.String:
+                self.__strings.append(sym)
+            elif sym.type == clingo.SymbolType.Function:
+                self.__add_func(sym)
+
+    @property
+    def numbers(self) -> List[clingo.Symbol]:
+        return self.__numbers
+
+    @property
+    def strings(self) -> List[clingo.Symbol]:
+        return self.__strings
+
+    def __add_func(self, atom: clingo.Function):
+
+        name = atom.name
+        arity = len(atom.arguments)
+        positive = atom.positive
+        if name not in self.__func:
+            self.__func[name] = {}
+        if arity not in self.__func[name]:
+            self.__func[name][arity] = ([], [])
+        
+        self.__func[name][arity][positive].append(atom.arguments)
+
+    def get_atoms(self, name, arity, positive=True) -> List[clingo.Symbol]:
+        if name not in self.__func or arity not in self.__func[name]:
+            return []
+        return [clingo.Function(name, args, positive=positive) for
+                    args in self.__func[name][arity][positive]]
+
+    def count_atoms(self, name, arity, positive=True) -> int:
+        return len(self.get_atoms(name, arity, positive=positive))
+
+    def get_all_atoms(self) -> List[clingo.Symbol]:
+        result = []
+        for n in self.__func:
+            for a in self.__func[n]:
+                result += self.get_atoms(n, a, positive=True)
+                result += self.get_atoms(n, a, positive=False)
+        return result
 
 def check_multiple(models):
     if len(models) == 0:
