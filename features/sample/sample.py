@@ -1,5 +1,6 @@
 import clingo
 import subprocess
+import os
 import features.solver as solver
 import features.logic
 from features.logic import Logic
@@ -17,6 +18,8 @@ class Instance:
         self.numbered = numbered
         self.__depth = None
         self.__complete = False
+        self.__changed = False
+        self.__hold = None
         self.symbols = SymbolSet([])
         self.__init_encoding()
         
@@ -84,6 +87,7 @@ class Instance:
                 self.__complete = True
             else:
                 self.__depth = self.next_depth()
+                self.__changed = True
 
     def state_number(self):
         if self.symbols is None: return 0
@@ -120,14 +124,15 @@ class Instance:
         return self.symbols.get_atoms('goal', 1)
 
     def get_encoding(self):
-        with solver.create_solver() as ctl:
-            self.init_solver(ctl)
-            ctl.addSymbols(self.get_predicates() + self.get_const())
-            ctl.ground([('base', []), ('hold', [])])            
-            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-            assert(len(symbols) == 1)
-
-        return symbols[0] + self.get_predicates() + self.get_const() + \
+        if self.__changed:
+            with solver.create_solver() as ctl:
+                self.init_solver(ctl)
+                ctl.addSymbols(self.get_predicates() + self.get_const())
+                ctl.ground([('base', []), ('hold', [])])            
+                symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+                assert(len(symbols) == 1)
+                self.__hold = symbols[0]
+        return self.__hold + self.get_predicates() + self.get_const() + \
                self.get_states() + self.get_transitions() + self.get_goal()
 
 
@@ -164,10 +169,10 @@ class Sample:
         self.transition_count = t_n
 
     def is_goal(self):
-        return all([inst.is_goal for inst in self.instances])
+        return all([inst.is_goal() for inst in self.instances])
 
     def is_complete(self):
-        return all([inst.is_complete for inst in self.instances])
+        return all(inst.is_complete() for inst in self.instances)
 
     def get_states(self) -> List[clingo.Symbol]:
         states = []
@@ -180,7 +185,7 @@ class Sample:
         for instance in self.instances:
             for c in instance.get_const():
                 const[c] = True
-        return const.keys()
+        return list(const.keys())
 
     def get_transitions(self) -> List[clingo.Symbol]:
         transitions = []
@@ -193,6 +198,35 @@ class Sample:
         for instance in self.instances:
             result += instance.get_encoding()
         return result
+
+class SampleFile:
+    def __init__(self, s_file):
+        self.file = s_file
+        with solver.create_solver() as ctl:
+            ctl.load(self.file)
+            ctl.ground([Logic.base])
+            sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(sym) == 1)
+            self.symset = SymbolSet(sym[0])
+
+    def is_goal(self):
+        return self.symset.count_atoms('goal', 1) > 0
+
+    def is_complete(self):
+        raise NotImplementedError #TODO add complete atom to encoding
+
+    def get_states(self) -> List[clingo.Symbol]:
+        return self.symset.get_atoms('state', 1)
+
+    def get_const(self) -> List[clingo.Symbol]:
+        return self.symset.get_atoms('const', 1)
+
+    def get_transitions(self) -> List[clingo.Symbol]:
+        return self.symset.get_atoms('transitions', 2)
+
+    def get_sample(self) -> List[clingo.Symbol]:
+        return self.symset.get_all_atoms()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -214,5 +248,4 @@ if __name__ == "__main__":
         goal_req=args.goal,
         complete=args.complete
     )
-
     write_symbols(sample.get_sample(), args.out)

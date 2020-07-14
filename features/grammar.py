@@ -12,8 +12,9 @@ from features.logic import Logic
 from knowledge import ConceptFile, splitSymbols
 import features.solver as solver
 from features.solver import SolverType
+from features.sample.sample import Sample, SampleFile
 from comparison import CompareConcept
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from prune import Pruneable
 
 class Concept(Pruneable):
@@ -64,25 +65,27 @@ class Concept(Pruneable):
         return ('show_exp_set', [set])
 
 class Primitive:
-    def __init__(self, sample):
+    def __init__(self, sample: Union[Sample, SampleFile]):
         self.sample = sample
 
     def __call__(self):
         logging.debug('Calling Primitive')
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.sample])
+            ctl.load([Logic.grammarFile])
+            ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Concept.primitive(1), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
 
 class Negation:
-    def __init__(self, sample, primitive: ConceptFile):
+    def __init__(self, sample: Union[Sample, SampleFile], primitive: ConceptFile):
         self.sample = sample
         self.primitive = primitive
     def __call__(self):
         logging.debug('Calling Negation({})'.format(self.primitive.name))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.primitive.file, self.sample])
+            ctl.load([Logic.grammarFile, self.primitive.file])
+            ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             ctl.ground([Logic.base, Concept.negation(2), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
 
@@ -96,7 +99,8 @@ class EqualRole:
     def __call__(self):
         logging.debug('Calling EqualRole')
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.roles, self.sample])
+            ctl.load([Logic.grammarFile, self.roles])
+            ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             ctl.ground([Logic.base, Concept.equalRole(3), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
@@ -110,7 +114,8 @@ class Conjunction:
     def __call__(self):
         logging.debug('Calling Conjunction({},{})'.format(self.concept1.name, self.concept2.name))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept1.file, self.concept2.file, self.sample])
+            ctl.load([Logic.grammarFile, self.concept1.file, self.concept2.file])
+            ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             depth = self.concept1.depth + self.concept2.depth + 1
             ctl.ground([Logic.base, Concept.conjunction(depth, self.concept1.depth, self.concept2.depth), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -125,7 +130,8 @@ class Uni:
     def __call__(self):
         logging.debug('Calling Uni({})'.format(self.concept.name))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
+            ctl.load([Logic.grammarFile, self.concept.file, self.roles])
+            ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.uni(depth), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -139,7 +145,8 @@ class Exi:
     def __call__(self):
         logging.debug('Calling Exi({})'.format(self.concept.name))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept.file, self.roles, self.sample])
+            ctl.load([Logic.grammarFile, self.concept.file, self.roles])
+            ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             depth = self.concept.depth + 2
             ctl.ground([Logic.base, Concept.exi(depth), Concept.keepExp])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
@@ -147,22 +154,15 @@ class Exi:
 
 def roles(sample):
     with solver.create_solver() as ctl:
-        ctl.load([sample, Logic.grammarFile])
+        ctl.load([Logic.grammarFile])
+        ctl.addSymbols(sample.get_sample())
         ctl.ground([Logic.base, Logic.roles, Logic.keepRoles])
         result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
     return result
 
-def const_state(sample):
-    with solver.create_solver() as ctl:
-        ctl.load([sample, Logic.pruneFile])
-        ctl.ground([Logic.base, Logic.simplifySample])
-        result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-    return result
-
-
 class Grammar:
-    def __init__(self, sample, path, comp_type=CompareConcept.STANDARD):
-        self.samplePath = sample
+    def __init__(self, sample: Union[Sample, SampleFile], path, comp_type=CompareConcept.STANDARD):
+        self.sample = sample
         self.path = Path(path)
         self.concepts = {}
         self.conceptNum = {}
@@ -182,7 +182,6 @@ class Grammar:
         if depth < 1: return
         directory = os.listdir(self.path)
         self.roles = str(self.path/'roles.lp')
-        self.simple = str(self.path/'simple.lp')
         for elem in directory:
             match = re.match(r'depth_(\d*)_(\d*)', elem)
             if match:
@@ -200,7 +199,7 @@ class Grammar:
             self.concepts[depth].sort(key=lambda x: x.name)
     
     def addRoles(self):
-        symbols = roles(self.samplePath)
+        symbols = roles(self.sample)
         with solver.create_solver() as ctl:
             ctl.load(Logic.pruneFile)
             ctl.addSymbols(symbols)
@@ -210,29 +209,23 @@ class Grammar:
         write_symbols(symbols, self.roles)
         del symbols[:]
 
-    def addConstAndState(self):
-        symbols = const_state(self.samplePath)
-        self.simple = str(self.path/'simple.lp')
-        write_symbols(symbols, self.simple)
-        del symbols[:]
-
     def getDepth(self, depth):
         if depth == 1:
-            return [Primitive(self.samplePath)]
+            return [Primitive(self.sample)]
         elif depth == 2:
-            return [Negation(self.simple, prim) for prim in self.concepts[1]]
+            return [Negation(self.sample, prim) for prim in self.concepts[1]]
         else:
             variables = []
             if depth == 3:
-                variables.append(EqualRole(self.simple, self.roles))
+                variables.append(EqualRole(self.sample, self.roles))
             
             for i in range(1, (depth + 1)//2):
                 for conc1 in self.concepts[i]:
                     for conc2 in self.concepts[depth - i - 1]:
-                        variables.append(Conjunction(self.simple, conc1, conc2))
+                        variables.append(Conjunction(self.sample, conc1, conc2))
             for conc in self.concepts[depth - 2]:
-                variables.append(Uni(self.simple, conc, self.roles))
-                variables.append(Exi(self.simple, conc, self.roles))
+                variables.append(Uni(self.sample, conc, self.roles))
+                variables.append(Exi(self.sample, conc, self.roles))
             return variables
 
     def get_concepts(self):
@@ -305,7 +298,6 @@ class Grammar:
         if start_depth <= 1:
             self.createDir()
             self.addRoles()
-            self.addConstAndState()
         else:
             self.loadProgress(start_depth-1)
         
@@ -368,7 +360,7 @@ if __name__ == "__main__":
     print(args.compare)
     solver.set_default(args.solver)
     print(args.solver)
-    grammar = Grammar(args.sample,args.out_dir, comp_type=args.compare)
+    grammar = Grammar(SampleFile(args.sample),args.out_dir, comp_type=args.compare)
     import time
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
