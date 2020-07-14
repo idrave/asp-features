@@ -48,6 +48,9 @@ class SymbolSet:
         self.__numbers = []
         self.__strings = []
         self.__func = {}
+        self.add_symbols(symbols)
+
+    def add_symbols(self, symbols: List[clingo.Symbol]):
         for sym in symbols:
             assert(isinstance(sym, clingo.Symbol))
             if sym.type == clingo.SymbolType.Number:

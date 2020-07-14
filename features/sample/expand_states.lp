@@ -98,12 +98,31 @@ transition(State, Other) :-
     state(State, depth-1), validAction(Action, State, depth), state(Other, _),
     compare(apply(Action, State), Other, depth), not different(apply(Action, State), Other).
 
-#show state(S, D) : state(S, D).
-#show state(S) : state(S, _).
-#show goal(G) : goal(G), state(G, _).
-#show transition(S, T) : transition(S, T).
+#program show_default(depth).
+
+#show state(S, depth) : state(S, depth).
+#show state(S) : state(S, depth).
+#show goal(G) : goal(G), state(G, depth).
+#show transition(S, T) : transition(S, T), state(S, depth-1).
 #show has(X, T) : has(X, T).
 #show variable(V) : variable(V).
-#show initialState(S) : initialState(S).
+#show initialState(S) : initialState(S), state(S, depth).
 #show constant(X) : constant(X).
-#show holds(Var, V, S) : holds(Var, V, S), state(S, _).
+#show holds(Var, V, S) : holds(Var, V, S), state(S, depth).
+
+#program show_numbered(depth).
+
+old(N) :- N = #count{S : state(S, D), D < depth}.
+stateId(S, N + M) :- state(S, depth), old(N), M = #count{T : state(T, depth), T < S}.
+
+#show stateId(S, Id) : stateId(S, Id), state(S, depth).
+#show state(Id, depth) : state(S, depth), stateId(S, Id).
+#show state(Id) : state(S, depth), stateId(S, Id).
+#show goal(Id) : goal(G), state(G, depth), stateId(G, Id).
+#show transition(S, Id2) : transition(S, T), state(S, depth-1), state(T, depth), stateId(T, Id2).
+#show transition(S, T) : transition(S, T), state(S, depth-1), state(T, D), D < depth.
+#show has(X, T) : has(X, T).
+#show variable(V) : variable(V).
+#show initialState(Id) : initialState(S), stateId(S, Id), state(S, depth).
+#show constant(X) : constant(X).
+#show holds(Var, V, Id) : holds(Var, V, S), state(S, depth), stateId(S, Id).
