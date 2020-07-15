@@ -222,7 +222,7 @@ class SampleFile:
         return self.symset.get_atoms('const', 1)
 
     def get_transitions(self) -> List[clingo.Symbol]:
-        return self.symset.get_atoms('transitions', 2)
+        return self.symset.get_atoms('transition', 2)
 
     def get_sample(self) -> List[clingo.Symbol]:
         return self.symset.get_all_atoms()

@@ -167,6 +167,7 @@ class Grammar:
         self.concepts = {}
         self.conceptNum = {}
         self.compare = CompareConcept(comp_type=comp_type)
+        self.cost = 0
         self.total_concepts = 0
     
     def createDir(self):
@@ -195,6 +196,7 @@ class Grammar:
                     self.conceptNum[dep] += countFile(filename)
                     self.concepts[dep].append(ConceptFile(match.group(0), filename, dep))
         for depth in self.concepts:
+            self.cost = max(self.cost, depth)
             self.total_concepts += self.conceptNum[depth]
             self.concepts[depth].sort(key=lambda x: x.name)
     
@@ -209,7 +211,7 @@ class Grammar:
         write_symbols(symbols, self.roles)
         del symbols[:]
 
-    def getDepth(self, depth):
+    def __concepts_depth(self, depth):
         if depth == 1:
             return [Primitive(self.sample)]
         elif depth == 2:
@@ -292,7 +294,7 @@ class Grammar:
         self.conceptNum[depth] += concept_n
         self.total_concepts += concept_n
 
-    def expandGrammar(self, start_depth, max_depth, logg=False, max_exp=50, max_conc=50):
+    def expand_grammar(self, start_depth, max_depth, logg=False, max_exp=50, max_conc=50):
         logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
         
         if start_depth <= 1:
@@ -305,7 +307,7 @@ class Grammar:
             if logg: print('Depth {}:'.format(depth))
             self.concepts[depth] = []
             self.conceptNum[depth] = 0
-            expressions = self.getDepth(depth)
+            expressions = self.__concepts_depth(depth)
             logging.debug('Number of concept groups: {}'.format(len(expressions)))
             for exp in expressions:
                 symbols = exp()
@@ -364,5 +366,5 @@ if __name__ == "__main__":
     import time
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
-    grammar.expandGrammar(args.start, args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
+    grammar.expand_grammar(args.start, args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
     print("Took {}s.".format(round(time.time()-start, 2)))

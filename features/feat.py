@@ -7,6 +7,7 @@ from features.logic import Logic
 from features.grammar import Grammar, Concept
 from features.prune import Pruneable
 from features.comparison import CompareFeature
+from features.sample.sample import Sample, SampleFile
 from typing import List, Union
 from pathlib import Path
 import clingo
@@ -42,82 +43,69 @@ class Feature(Pruneable):
         return ('show_features', [set])
 
 class Nullary:
-    def __init__(self, sample, transitions):
+    def __init__(self, sample: Union[Sample, SampleFile]):
         self.sample = sample
-        self.transitions = transitions
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling Nullary')
         with solver.create_solver() as ctl:
-            ctl.load([Logic.featureFile, self.sample, self.transitions])
+            ctl.load([Logic.featureFile])
+            ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Feature.primitiveFeature, Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
 
 class ConceptFeat:
-    def __init__(self, sample, concepts: Union[ConceptFile, List[ConceptFile]], transitions):
+    def __init__(self, sample: Union[Sample, SampleFile], concepts: Union[ConceptFile, List[ConceptFile]]):
         self.sample = sample
         self.concepts = [concepts] if isinstance(concepts, ConceptFile) else concepts
-        self.transitions = transitions
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling ConceptFeat({})'.format([c.name for c in self.concepts]))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.featureFile, self.sample, self.transitions] + [conc.file for conc in self.concepts])
+            ctl.load([Logic.featureFile] + [conc.file for conc in self.concepts])
+            ctl.addSymbols(self.sample.get_states())
+            ctl.addSymbols(self.sample.get_transitions())
+            ctl.addSymbols(self.sample.get_const())
+            #ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Feature.conceptFeature, Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
 
 class Distance:
-    def __init__(self, sample, roles, concepts: Union[ConceptFile, List[ConceptFile]], transitions, max_cost=8):
+    def __init__(self, sample, roles, concepts: Union[ConceptFile, List[ConceptFile]], max_cost=8):
         self.sample = sample
         self.roles = roles
         self.concepts = [concepts] if isinstance(concepts, ConceptFile) else concepts
-        self.transitions = transitions
         self.max_cost = max_cost
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling ConceptFeat({})'.format(self.concepts.name))
         with solver.create_solver() as ctl:
-            ctl.load([Logic.featureFile, self.sample, self.transitions, self.roles] + [conc.file for conc in self.concepts])
+            ctl.load([Logic.featureFile, self.roles] + [conc.file for conc in self.concepts])
+            ctl.addSymbols(self.sample.get_states())
+            ctl.addSymbols(self.sample.get_transitions())
+            ctl.addSymbols(self.sample.get_const())
             ctl.ground([Logic.base, Feature.distFeature(self.max_cost), Feature.processFeat])
             result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
         return result
 
-def get_transitions(sample):
-    with solver.create_solver() as ctl:
-        ctl.load([sample, Logic.pruneFile])
-        ctl.ground([Logic.base, Logic.transitions])
-        result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-    return result
-
 class Features:
-    def __init__(self, sample, concept_path, output):
-        self.sample_path = sample
-        self.concepts = Grammar(sample, concept_path)
-        self.path = Path(output)
-        self.features = str(self.path/'features.lp')
-        
+    def __init__(self, sample: Union[Sample, SampleFile], grammar, output):
+        self.sample = sample
+        self.concepts = grammar
+        self.features = output
+        with open(self.features, 'w'): pass
         self.total_features = 0
         self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
-
-    def createDir(self):
-        print(self.path.absolute())
-        if not self.path.is_dir():
-            try:
-                self.path.mkdir()
-                with open(self.features, 'w'): pass
-            except (FileNotFoundError, FileExistsError) as e:
-                print(repr(e))
-                sys.exit()
 
     def list_features(self, max_cost, batch=1, distance=False):
         ans = []
         if max_cost > 0:
-            ans.append(Nullary(self.sample_path, self.transitions))
+            ans.append(Nullary(self.sample))
         self.concepts.loadProgress(max_cost)
         for conc in self.concepts.batchIterator(batch=batch):
-            ans.append(ConceptFeat(self.concepts.simple, conc, self.transitions))
+            ans.append(ConceptFeat(self.sample, conc))
         if distance:
             pass #TODO
         return ans
@@ -139,15 +127,8 @@ class Features:
         del symbols[:]
         self.total_features += feat_n
 
-    def add_transitions(self):
-        symbols = get_transitions(self.sample_path)
-        self.transitions = str(self.path/'transitions.lp')
-        write_symbols(symbols, self.transitions)
-
     def generate(self, max_cost=8, batch=1, max_pre=50, max_feat=50, distance=False):
         logging.debug('Features with max cost {}'.format(max_cost))
-        self.createDir()
-        self.add_transitions()
 
         features = self.list_features(max_cost, batch=batch, distance=distance)
         for feat in features:
@@ -177,5 +158,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
-    features = Features(args.sample, args.concepts, args.out_dir)
+    sample = SampleFile(args.sample)
+    grammar = Grammar(sample, args.concepts)
+    features = Features(sample, grammar, args.out_dir)
     features.generate(max_cost=args.max_cost, batch=args.batch, max_pre=args.atom, max_feat=args.comp, distance=args.dist)
