@@ -91,23 +91,19 @@ class Distance:
         return result
 
 class Features:
-    def __init__(self, sample: Union[Sample, SampleFile], grammar, output):
+    def __init__(self, sample: Union[Sample, SampleFile], grammar, output, distance=False):
         self.sample = sample
         self.concepts = grammar
         self.features = output
         with open(self.features, 'w'): pass
         self.total_features = 0
+        self.cost = 0
         self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
+        self.__distance = distance
 
-    def list_features(self, max_cost, batch=1, distance=False):
+    def list_features(self, max_cost):
         ans = []
-        if max_cost > 0:
-            ans.append(Nullary(self.sample))
-        self.concepts.loadProgress(max_cost)
-        for conc in self.concepts.batchIterator(batch=batch):
-            ans.append(ConceptFeat(self.sample, conc))
-        if distance:
-            pass #TODO
+        
         return ans
 
     def prune(self, features, max_pre, max_feat):
@@ -127,10 +123,24 @@ class Features:
         del symbols[:]
         self.total_features += feat_n
 
-    def generate(self, max_cost=8, batch=1, max_pre=50, max_feat=50, distance=False):
+    def generate(self, max_cost=None, batch=1, max_pre=50, max_feat=50, **kwargs):
+        max_cost = self.cost+1 if max_cost is None else max_cost
         logging.debug('Features with max cost {}'.format(max_cost))
 
-        features = self.list_features(max_cost, batch=batch, distance=distance)
+        features = []
+        if self.cost == 0 and max_cost > 0:
+            features.append(Nullary(self.sample))
+
+        if self.concepts.cost < max_cost:
+            self.concepts.expand_grammar(max_cost, **kwargs)
+        conc = []
+        for i in range(self.cost+1, max_cost+1):
+            conc += self.concepts.get_cost(i)
+        for i in range(0,len(conc),batch):
+            features.append(ConceptFeat(self.sample, conc[i:i+batch]))
+        if self.__distance:
+            pass #TODO
+
         for feat in features:
             symbols = feat()
             logging.debug('Initial features: {}'.format(count_symbols(symbols, 'prefeature', 1)))
@@ -160,5 +170,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=args.loglevel)
     sample = SampleFile(args.sample)
     grammar = Grammar(sample, args.concepts)
-    features = Features(sample, grammar, args.out_dir)
-    features.generate(max_cost=args.max_cost, batch=args.batch, max_pre=args.atom, max_feat=args.comp, distance=args.dist)
+    grammar.load_progress(args.max_cost)
+    features = Features(sample, grammar, args.out_dir, distance=args.dist)
+    features.generate(max_cost=args.max_cost, batch=args.batch, max_pre=args.atom, max_feat=args.comp)

@@ -168,7 +168,9 @@ class Grammar:
         self.conceptNum = {}
         self.compare = CompareConcept(comp_type=comp_type)
         self.cost = 0
+        self.roles = None
         self.total_concepts = 0
+        self.createDir()
     
     def createDir(self):
         print(self.path.absolute())
@@ -179,7 +181,7 @@ class Grammar:
                 print(repr(e))
                 sys.exit()
 
-    def loadProgress(self, depth):
+    def load_progress(self, depth):
         if depth < 1: return
         directory = os.listdir(self.path)
         self.roles = str(self.path/'roles.lp')
@@ -195,12 +197,13 @@ class Grammar:
                     filename =  str(self.path/elem)
                     self.conceptNum[dep] += countFile(filename)
                     self.concepts[dep].append(ConceptFile(match.group(0), filename, dep))
+        self.total_concepts = 0
         for depth in self.concepts:
             self.cost = max(self.cost, depth)
             self.total_concepts += self.conceptNum[depth]
             self.concepts[depth].sort(key=lambda x: x.name)
     
-    def addRoles(self):
+    def add_roles(self):
         symbols = roles(self.sample)
         with solver.create_solver() as ctl:
             ctl.load(Logic.pruneFile)
@@ -294,16 +297,12 @@ class Grammar:
         self.conceptNum[depth] += concept_n
         self.total_concepts += concept_n
 
-    def expand_grammar(self, start_depth, max_depth, logg=False, max_exp=50, max_conc=50):
-        logging.info("Starting {}. Ending {}".format(start_depth, max_depth))
+    def expand_grammar(self, max_depth, logg=False, max_exp=400, max_conc=250):
+        logging.debug("Starting {}. Ending {}".format(self.cost, max_depth))
         
-        if start_depth <= 1:
-            self.createDir()
-            self.addRoles()
-        else:
-            self.loadProgress(start_depth-1)
+        if self.roles is None: self.add_roles()
         
-        for depth in range(start_depth, max_depth+1):
+        for depth in range(self.cost+1, max_depth+1):
             if logg: print('Depth {}:'.format(depth))
             self.concepts[depth] = []
             self.conceptNum[depth] = 0
@@ -317,7 +316,17 @@ class Grammar:
                 del symbols[:]
                     
             print("Total {}: {} concepts.\n".format(depth, self.conceptNum[depth]))
+            
+        self.cost = max_depth
         self.joinOutput(self.path/'concept_summary.lp')
+
+    def get_cost(self, cost):
+        if cost > self.cost or cost <= 0:
+            raise ValueError('Concepts of cost {} have not been generated.'.format(cost))
+        return self.concepts[cost]
+
+    def is_generated(self, cost):
+        return cost in self.concepts
 
     def joinOutput(self, out_file):
         with open(str(out_file), 'w') as outfile:
@@ -366,5 +375,7 @@ if __name__ == "__main__":
     import time
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
-    grammar.expand_grammar(args.start, args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
+    grammar.load_progress(args.start-1)
+    grammar.expand_grammar(args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
+    print('Total number of concepts: {}'.format(grammar.total_concepts))
     print("Took {}s.".format(round(time.time()-start, 2)))
