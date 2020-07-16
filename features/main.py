@@ -3,10 +3,12 @@ from features.comparison import CompareConcept
 import logging
 from features.solver import SolverType
 import features.solver as solver
-from features.sample.sample import Sample
+from features.sample.sample import Instance, Sample
 from features.grammar import Grammar
 from features.feat import Features
 from pathlib import Path
+from features.model_util import write_symbols
+import sys
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -20,9 +22,9 @@ def get_args():
     #Sample generation arguments
     sample_group = parser.add_argument_group('Sample')
     sample_group.add_argument('--symbol', action='store_true', help='Represent states in plain symbols instead of numericaly')
-    sample_group.add_argument('--depth', default=6, type=int, help='Minimum expansion depth required')
-    sample_group.add_argument('-s', dest='states', type=int, help='Minimum number of states required')
-    sample_group.add_argument('-t', dest='transitions', type=int, help='Minimum number of transitions required')
+    sample_group.add_argument('--depth', type=int, default=None, help='Minimum expansion depth required')
+    sample_group.add_argument('-s', dest='states', type=int, default=None, help='Minimum number of states required')
+    sample_group.add_argument('-t', dest='transitions', type=int, default=500, help='Minimum number of transitions required')
     sample_group.add_argument('--complete', action='store_true', help='Expand all state space (could be too big!)')
     sample_group.add_argument('--goal', action='store_true', help='Ensure there is at least one goal per instance')
     
@@ -52,11 +54,33 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
+    if not (args.features != None or args.cost != None):
+        RuntimeError('At least one of arguments --cost and --features is required')
+
     logging.basicConfig(level=args.loglevel)
     solver.set_default(args.solver)
     print(args.pddl, args.out)
     out_path = Path(args.out)
-    sample = Sample(args.pddl)
-    grammar = Grammar(sample, str(out_path/'concepts'))
-    features = Features(sample, grammar, str(out_path/'features.lp'))
+    if not out_path.is_dir():
+        try:
+            out_path.mkdir()
+        except (FileNotFoundError, FileExistsError) as e:
+            print(repr(e))
+            sys.exit()
+    sample = Sample([Instance(pddl, numbered=(not args.symbol)) for pddl in args.pddl])
+    grammar = Grammar(sample, str(out_path/'concepts'), comp_type=args.compare)
+    features = Features(sample, grammar, str(out_path/'features.lp'), distance=args.dist)
+
+    sample.expand_states(
+        depth=args.depth, states=args.states, transitions=args.transitions,
+        goal_req=args.goal, complete=args.complete
+    )
+    write_symbols(sample.get_sample(), str(out_path/'sample.lp'))
+    while (args.features != None and features.feature_count() < args.features) or \
+            (args.cost != None and features.cost < args.cost):
+        features.generate(
+            batch=args.batch, max_pre=args.atom, max_feat=args.comp,
+            max_exp=args.exp, max_conc=args.conc
+        )
+        
     

@@ -7,15 +7,15 @@ import re
 import argparse
 import os
 from pathlib import Path
-from model_util import to_model_list, ModelUtil, filter_symbols, check_multiple, add_symbols, write_symbols, count_symbols, get_symbols
+from features.model_util import write_symbols, count_symbols
 from features.logic import Logic
-from knowledge import ConceptFile, splitSymbols
+from features.knowledge import ConceptFile, splitSymbols
 import features.solver as solver
 from features.solver import SolverType
 from features.sample.sample import Sample, SampleFile
 from comparison import CompareConcept
 from typing import List, Tuple, Union
-from prune import Pruneable
+from features.prune import Pruneable
 
 class Concept(Pruneable):
     cardinality = ('cardinality', [])
@@ -297,13 +297,13 @@ class Grammar:
         self.conceptNum[depth] += concept_n
         self.total_concepts += concept_n
 
-    def expand_grammar(self, max_depth, logg=False, max_exp=400, max_conc=250):
+    def expand_grammar(self, max_depth, max_exp=400, max_conc=250):
         logging.debug("Starting {}. Ending {}".format(self.cost, max_depth))
         
         if self.roles is None: self.add_roles()
         
         for depth in range(self.cost+1, max_depth+1):
-            if logg: print('Depth {}:'.format(depth))
+            print('Depth {}:'.format(depth))
             self.concepts[depth] = []
             self.conceptNum[depth] = 0
             expressions = self.__concepts_depth(depth)
@@ -376,6 +376,6 @@ if __name__ == "__main__":
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
     grammar.load_progress(args.start-1)
-    grammar.expand_grammar(args.max_depth, logg=True, max_exp=args.exp, max_conc=args.conc)
+    grammar.expand_grammar(args.max_depth, max_exp=args.exp, max_conc=args.conc)
     print('Total number of concepts: {}'.format(grammar.total_concepts))
     print("Took {}s.".format(round(time.time()-start, 2)))

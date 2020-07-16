@@ -1,15 +1,7 @@
 import clingo
-from model_util import add_symbols, ModelUtil, check_multiple, count_symbols
 from features.logic import Logic
 import features.solver as solver
-from pathlib import Path
-import pickle
-from multiprocessing import Process, Pipe, connection
-import re
-from enum import Enum
 import logging
-import os
-from comparison import Comparison
 from typing import List, Tuple, Union, Optional
 
 def splitSymbols(symbols, start_id, first_size, id_prog, get_prog, max_conc=50):

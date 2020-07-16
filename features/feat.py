@@ -1,4 +1,5 @@
-from features.knowledge import ConceptFile, Comparison, number_symbols
+from features.knowledge import ConceptFile, number_symbols
+from features.comparison import Comparison
 import features.solver as solver
 from features.solver import SolverType
 import logging
@@ -101,11 +102,6 @@ class Features:
         self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
         self.__distance = distance
 
-    def list_features(self, max_cost):
-        ans = []
-        
-        return ans
-
     def prune(self, features, max_pre, max_feat):
         return Feature.prune_symbols(
                     features, self.features, self.compare,
@@ -122,6 +118,9 @@ class Features:
         write_symbols(symbols, self.features, type_='a')
         del symbols[:]
         self.total_features += feat_n
+
+    def feature_count(self):
+        return self.total_features
 
     def generate(self, max_cost=None, batch=1, max_pre=50, max_feat=50, **kwargs):
         max_cost = self.cost+1 if max_cost is None else max_cost
@@ -150,6 +149,7 @@ class Features:
             self.addFeatures(symbols)
             del symbols[:]
         print('Generated {} features'.format(self.total_features))
+        self.cost = max_cost
 
 if __name__ == "__main__":
     parser = ArgumentParser()
