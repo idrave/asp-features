@@ -181,15 +181,15 @@ class Grammar:
                 print(repr(e))
                 sys.exit()
 
-    def load_progress(self, depth):
-        if depth < 1: return
+    def load_progress(self, depth=None):
+        if depth != None and depth < 1: return
         directory = os.listdir(self.path)
         self.roles = str(self.path/'roles.lp')
         for elem in directory:
             match = re.match(r'depth_(\d*)_(\d*)', elem)
             if match:
                 dep = int(match.group(1))
-                if dep <= depth:
+                if depth == None or dep <= depth:
                     logging.debug('Found file: {}'.format(match.group(0)))
                     if dep not in self.concepts:
                         self.concepts[dep] = []

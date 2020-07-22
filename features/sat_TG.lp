@@ -16,12 +16,6 @@ relevant(S) :- relevant(S, _).
 relevant(S) :- relevant(_, S).
 
 % Rule (1). Define d1
-relevant(S) :- relevant(S, _).
-relevant(S) :- relevant(_, S).
-
-%%%%%%%%%%%%%%%%%
-%selected(F) :- feature(F).
-%%%%%%%%%%%%%%%%%
 
 d1(S, T) :- feature(F), selected(F), relevant(S), state(T), S != T,
             qualValue(F, A, S), qualValue(F, B, T), not A = B.

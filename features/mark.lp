@@ -1,4 +1,22 @@
 #show.
+#program relevant.
+%Select one optimal plan as relevant transitions
+
+optimalCost(Cost) :- Cost = #min{X : goal(S), state(S, X)}.
+
+optimalGoal(Goal) :- state(Goal, Depth), optimalCost(Depth), goal(Goal),
+	Goal <= X : state(X, Depth), goal(X).
+
+relevant(State, Goal) :- optimalGoal(Goal), state(Goal, Depth), 
+	transition(State, Goal), state(State, Depth-1),
+	State <= X : transition(X, Goal), state(X, Depth-1).
+
+relevant(State1, State2) :- state(State2, Depth), relevant(State2, _), 
+	transition(State1, State2), state(State1, Depth-1),
+	State1 <= X : transition(X, State2), state(X, Depth-1).
+
+#show relevant(S1, S2) : relevant(S1, S2).
+
 #program dist_goal(dist).
 
 dist_goal(State, 0) :- dist = 0, goal(State).

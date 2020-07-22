@@ -14,7 +14,9 @@ from pathlib import Path
 import clingo
 import sys
 from argparse import ArgumentParser
+from pathlib import Path
 import os
+import json
 
 class Feature(Pruneable):
     prune_file = str(Logic.logicPath/'prune.lp')
@@ -92,15 +94,27 @@ class Distance:
         return result
 
 class Features:
-    def __init__(self, sample: Union[Sample, SampleFile], grammar, output, distance=False):
+    def __init__(self, sample: Union[Sample, SampleFile], grammar, output, distance=False, load=False):
         self.sample = sample
         self.concepts = grammar
-        self.features = output
-        with open(self.features, 'w'): pass
-        self.total_features = 0
-        self.cost = 0
-        self.compare = CompareFeature(comp_type=CompareFeature.STANDARD)
-        self.__distance = distance
+        path = Path(output)
+        self.features = str(path / 'features.lp')
+        self.info = str(path / 'features.json')
+        self.left = []
+        if not path.is_dir():
+            path.mkdir()
+
+        if load:
+            self.load_info()
+            if self.__distance != distance:
+                raise ValueError('Invalid distance argument {}. Loaded features have distance {}'.format(distance, self.__distance))
+        else:
+            with open(self.features, 'w'): pass
+            self.total_features = 0
+            self.cost = 0
+            self.__comp_type = CompareFeature.STANDARD
+            self.compare = CompareFeature(comp_type=self.__comp_type)
+            self.__distance = distance
 
     def prune(self, features, max_pre, max_feat):
         return Feature.prune_symbols(
@@ -122,11 +136,12 @@ class Features:
     def feature_count(self):
         return self.total_features
 
-    def generate(self, max_cost=None, batch=1, max_pre=50, max_feat=50, **kwargs):
+    def generate(self, max_cost=None, batch=1, max_f=None, max_pre=50, feat_prune=50, **kwargs):
         max_cost = self.cost+1 if max_cost is None else max_cost
         logging.debug('Features with max cost {}'.format(max_cost))
 
-        features = []
+        features = self.left
+        self.left = []
         if self.cost == 0 and max_cost > 0:
             features.append(Nullary(self.sample))
 
@@ -141,15 +156,39 @@ class Features:
             pass #TODO
 
         for feat in features:
-            symbols = feat()
-            logging.debug('Initial features: {}'.format(count_symbols(symbols, 'prefeature', 1)))
-            logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
-            logging.debug('Initial num: {}'.format(count_symbols(symbols, 'num', 1)))
-            symbols = self.prune(symbols, max_pre, max_feat)
-            self.addFeatures(symbols)
-            del symbols[:]
+            if max_f == None or self.total_features < max_f:
+                symbols = feat()
+                logging.debug('Initial features: {}'.format(count_symbols(symbols, 'prefeature', 1)))
+                logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
+                logging.debug('Initial num: {}'.format(count_symbols(symbols, 'num', 1)))
+                symbols = self.prune(symbols, max_pre, feat_prune)
+                self.addFeatures(symbols)
+                del symbols[:]
+            else:
+                self.left.append(feat)
         print('Generated {} features'.format(self.total_features))
+        logging.debug('Left: {}'.format(self.left))
         self.cost = max_cost
+        self.update_info()
+
+    def update_info(self):
+        data = {
+            'total_features': self.total_features,
+            'cost': self.cost,
+            'compare': self.__comp_type,
+            'distance': self.__distance
+        }
+        with open(self.info, 'w') as fp:
+            json.dump(data, fp)
+
+    def load_info(self):
+        with open(self.info, 'r') as fp:
+            data = json.load(fp)
+        self.total_features = data['total_features']
+        self.cost = data['cost']
+        self.__comp_type = data['compare']
+        self.compare = CompareFeature(comp_type=self.__comp_type)
+        self.__distance = data['distance']
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -165,11 +204,12 @@ if __name__ == "__main__":
     parser.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
     parser.add_argument('--atom',default=50, type=int, help='Max new features prunned together')
     parser.add_argument('--comp',default=50, type=int, help='Max number of known features used for prunning simultaneously')
+    parser.add_argument('--load',action='store_true', help='Whether to load features from given path')
 
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
-    sample = SampleFile(args.sample)
+    sample = Sample(load_path=args.sample)
     grammar = Grammar(sample, args.concepts)
     grammar.load_progress(args.max_cost)
-    features = Features(sample, grammar, args.out_dir, distance=args.dist)
+    features = Features(sample, grammar, args.out_dir, distance=args.dist, load=args.load)
     features.generate(max_cost=args.max_cost, batch=args.batch, max_pre=args.atom, max_feat=args.comp)

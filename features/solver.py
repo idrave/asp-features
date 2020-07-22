@@ -3,6 +3,8 @@ from multiprocessing import Process, Pipe
 from enum import Enum, auto
 from typing import List, Union, Tuple, Optional
 from abc import ABC, abstractmethod
+import psutil
+import time
 
 class Solver(ABC):
     def __init__(self, ctlkwargs: dict = {}):
@@ -107,7 +109,6 @@ class ClingoSolver(Solver):
         self.__ctl.add(program, prog_args, rules)
 
     def addSymbols(self, symbols: List[clingo.Symbol]) -> None:
-        
         with self.__ctl.backend() as backend:
             for symbol in symbols:
                 atom = backend.add_atom(symbol)
@@ -178,13 +179,14 @@ class ClingoProcess:
         
     def open(self):
         self.parent_conn, self.child_conn = Pipe(duplex=True)
-        self.process = Process(target=self.__start, args=(self.args,))
+        self.process = Process(target=self._start, args=(self.args,))
         self.process.start()
         self.child_conn.close()
 
     def close(self):
         self.parent_conn.send((ClingoOps.END, [], {}))
         self.parent_conn.close()
+        self.process.join()
 
     def __enter__(self):
         self.open()
@@ -195,26 +197,26 @@ class ClingoProcess:
             print(type, value, traceback)
         self.close()        
 
-    def __start(self, kwargs):
+    def _start(self, kwargs):
         self.parent_conn.close()
         with ClingoSolver(kwargs) as ctl:
             while True:
-                op, args, kwargs = self.__child_recv()
+                op, args, kwargs = self._child_recv()
                 if op == ClingoOps.END:
                     self.child_conn.close()
                     break
                 func = ClingoOps.get_op(op, ctl)
                 result = func(*args, **kwargs)
-                self.__child_send(op, result)
+                self._child_send(op, result)
                              
-    def __child_send(self, op, values):
+    def _child_send(self, op, values):
         if op in [ClingoOps.GET, ClingoOps.EXTERNAL]:
             values = list(map(symbol_pickle, values))
         elif op == ClingoOps.SOLVE and values is not None:
             values = list(map(lambda x: list(map(symbol_pickle, x)), values))
         self.child_conn.send(values)
 
-    def __child_recv(self):
+    def _child_recv(self):
         op, args, kwargs = self.child_conn.recv()
         if op == ClingoOps.ADDSYM:
             args[0] = list(map(lambda x: x.to_symbol(), args[0]))
@@ -224,7 +226,7 @@ class ClingoProcess:
             args[0] = args[0].to_symbol()
         return op, args, kwargs
 
-    def __parent_send(self, op, args, kwargs):
+    def _parent_send(self, op, args, kwargs):
         if op == ClingoOps.ADDSYM:
             args[0] = list(map(symbol_pickle, args[0]))
         elif op == ClingoOps.RESET:
@@ -233,7 +235,7 @@ class ClingoProcess:
             args[0] = symbol_pickle(args[0])
         self.parent_conn.send((op, args, kwargs))
 
-    def __parent_recv(self, op):
+    def _parent_recv(self, op):
         values = self.parent_conn.recv()
         if op in [ClingoOps.GET, ClingoOps.EXTERNAL]:
             values = list(map(lambda s: s.to_symbol(), values))
@@ -242,28 +244,28 @@ class ClingoProcess:
         return values
 
     def load(self, clingo_files: Union[str, List[str]]) -> None:
-        self.__parent_send(ClingoOps.LOAD, [clingo_files], {})
-        return self.__parent_recv(ClingoOps.LOAD)
+        self._parent_send(ClingoOps.LOAD, [clingo_files], {})
+        return self._parent_recv(ClingoOps.LOAD)
 
     def add(self, program, prog_args, rules):
-        self.__parent_send(ClingoOps.ADD, [program, prog_args, rules], {})
-        return self.__parent_recv(ClingoOps.ADD)
+        self._parent_send(ClingoOps.ADD, [program, prog_args, rules], {})
+        return self._parent_recv(ClingoOps.ADD)
 
     def addSymbols(self, symbols: List[clingo.Symbol]) -> None:
-        self.__parent_send(ClingoOps.ADDSYM, [symbols], {})
-        return self.__parent_recv(ClingoOps.ADDSYM)
+        self._parent_send(ClingoOps.ADDSYM, [symbols], {})
+        return self._parent_recv(ClingoOps.ADDSYM)
 
     def ground(self, programs: List[Tuple]) -> None:
-        self.__parent_send(ClingoOps.GROUND, [programs], {})
-        return self.__parent_recv(ClingoOps.GROUND)
+        self._parent_send(ClingoOps.GROUND, [programs], {})
+        return self._parent_recv(ClingoOps.GROUND)
 
     def solve(self, solvekwargs: dict = dict(yield_=False), symbolkwargs: dict = dict(atoms=True)) -> Optional[List[List[clingo.Symbol]]]:
-        self.__parent_send(ClingoOps.SOLVE, [], dict(solvekwargs=solvekwargs, symbolkwargs=symbolkwargs))
-        return self.__parent_recv(ClingoOps.SOLVE)
+        self._parent_send(ClingoOps.SOLVE, [], dict(solvekwargs=solvekwargs, symbolkwargs=symbolkwargs))
+        return self._parent_recv(ClingoOps.SOLVE)
 
     def assign_external(self, symbol: clingo.Symbol, val: bool) -> None:
-        self.__parent_send(ClingoOps.ASSIGN, [symbol, val], {})
-        return self.__parent_recv(ClingoOps.ASSIGN)
+        self._parent_send(ClingoOps.ASSIGN, [symbol, val], {})
+        return self._parent_recv(ClingoOps.ASSIGN)
 
     def reset(self, start_symbols: List[clingo.Symbol] = [], **kwargs) -> None: #TODO reset child process when calling reset
         self.close()
@@ -272,24 +274,58 @@ class ClingoProcess:
         self.addSymbols(start_symbols)
 
     def countAtoms(self, name, arity) -> int:
-        self.__parent_send(ClingoOps.COUNT, [name, arity], {})
-        return self.__parent_recv(ClingoOps.COUNT)
+        self._parent_send(ClingoOps.COUNT, [name, arity], {})
+        return self._parent_recv(ClingoOps.COUNT)
 
     def getAtoms(self, name, arity) -> List[clingo.Symbol]:
-        self.__parent_send(ClingoOps.GET, [name, arity], {})
-        return self.__parent_recv(ClingoOps.GET)
+        self._parent_send(ClingoOps.GET, [name, arity], {})
+        return self._parent_recv(ClingoOps.GET)
 
     def cleanup(self) -> None:
-        self.__parent_send(ClingoOps.CLEAN, [], {})
-        return self.__parent_recv(ClingoOps.CLEAN)
+        self._parent_send(ClingoOps.CLEAN, [], {})
+        return self._parent_recv(ClingoOps.CLEAN)
 
     def getExternals(self) -> List[clingo.Symbol]:
-        self.__parent_send(ClingoOps.EXTERNAL, [], {})
-        return self.__parent_recv(ClingoOps.EXTERNAL)
+        self._parent_send(ClingoOps.EXTERNAL, [], {})
+        return self._parent_recv(ClingoOps.EXTERNAL)
+
+class ClingoProfiling(ClingoProcess):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._mem = None
+        self._time = None
+    
+    def ground(self, programs: List[Tuple]) -> None:
+        proc = psutil.Process(pid=self.process.pid)
+        self._mem = []
+        start = time.time()
+        SLEEP_TIME=.001
+        self._parent_send(ClingoOps.GROUND, [programs], {})
+        while not self.parent_conn.poll():
+            self._mem.append(proc.memory_info().rss)
+            time.sleep(SLEEP_TIME)
+        self._time = time.time() - start
+        return self._parent_recv(ClingoOps.GROUND)
+
+    def solve(self, solvekwargs: dict = dict(yield_=False), symbolkwargs: dict = dict(atoms=True)) -> Optional[List[List[clingo.Symbol]]]:
+        proc = psutil.Process(pid=self.process.pid)
+        self._mem = []
+        start = time.time()
+        SLEEP_TIME=.01
+        self._parent_send(ClingoOps.SOLVE, [], dict(solvekwargs=solvekwargs, symbolkwargs=symbolkwargs))
+        while not self.parent_conn.poll():
+            self._mem.append(proc.memory_info().rss)
+            time.sleep(SLEEP_TIME)
+        self._time = time.time() - start
+        return self._parent_recv(ClingoOps.SOLVE)
+
+    def get_profiling(self):
+        return self._time, self._mem
 
 class SolverType(Enum):
     SIMPLE = 1
     PROCESS = 2
+    PROFILE = 3
 
     @staticmethod
     def get_solver_class(type_):
@@ -297,7 +333,8 @@ class SolverType(Enum):
             raise ValueError('Invalid type {} for Solver'.format(type_))
         d = {
             SolverType.SIMPLE : ClingoSolver,
-            SolverType.PROCESS : ClingoProcess
+            SolverType.PROCESS : ClingoProcess,
+            SolverType.PROFILE : ClingoProfiling
         }
         return d[type_]
 

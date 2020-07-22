@@ -13,22 +13,22 @@
 % Establish initial state
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-state(initialState, depth) :- depth = 0.
-holds(Variable, Value, initialState) :- initialState(Variable, Value), state(initialState, depth).
+expanded(initialState, depth) :- depth = 0.
+holds(Variable, Value, initialState) :- initialState(Variable, Value).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Compute derived predicates
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % conjunctive preconditions
-satisfied(DerivedPredicate, type(and), S) :- derivedPredicate(DerivedPredicate, type(and)), holds(Variable, Value, S) : precondition(DerivedPredicate, type(and), Variable, Value); state(S, depth).
+satisfied(DerivedPredicate, type(and), S) :- derivedPredicate(DerivedPredicate, type(and)), holds(Variable, Value, S) : precondition(DerivedPredicate, type(and), Variable, Value); expanded(S, depth).
 
 % disjunctive preconditions
-satisfied(DerivedPredicate, type(or), S) :- precondition(DerivedPredicate, type(or), Variable, Value), holds(Variable, Value, S), state(S, depth).
+satisfied(DerivedPredicate, type(or), S) :- precondition(DerivedPredicate, type(or), Variable, Value), holds(Variable, Value, S), expanded(S, depth).
 
-holds(DerivedVariable, Value, S) :- satisfied(DerivedPredicate, Type, S), postcondition(DerivedPredicate, Type, effect(unconditional), DerivedVariable, Value), state(S, depth).
+holds(DerivedVariable, Value, S) :- satisfied(DerivedPredicate, Type, S), postcondition(DerivedPredicate, Type, effect(unconditional), DerivedVariable, Value), expanded(S, depth).
 
-holds(derivedVariable(DerivedVariable), value(DerivedVariable, false), S) :- derivedVariable(DerivedVariable), not holds(derivedVariable(DerivedVariable), value(DerivedVariable, true), S), state(S, depth).
+holds(derivedVariable(DerivedVariable), value(DerivedVariable, false), S) :- derivedVariable(DerivedVariable), not holds(derivedVariable(DerivedVariable), value(DerivedVariable, true), S), expanded(S, depth).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Perform actions
@@ -40,6 +40,10 @@ caused(Variable, Value, apply(Action, State)) :-
 	validAction(Action, State, depth),
 	postcondition(Action, Effect, Variable, Value),
 	holds(VariablePre, ValuePre, State) : precondition(Effect, VariablePre, ValuePre).
+%precondition(effect(1), variable(("at-robby", X2)), value(variable(("at-robby", X2)), false)) :- action(action(("move", X1, X2))).
+%#show validAction(action(("move", X1, X2)), State, depth) : validAction(action(("move", X1, X2)), State, depth).
+%#show debug(State, X1, X2) : validAction(action(("move", X1, X2)), State, depth), holds(variable(("at-robby", X2)), value(variable(("at-robby", X2)), false), State).
+%#show (Action, Effect, VariablePre, ValuePre) : Action = action(("move", X1, X2)), validAction(Action, State, depth), postcondition(Action, Effect, Variable, Value), precondition(Effect, VariablePre, ValuePre).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Inertia rules
@@ -59,6 +63,8 @@ holds(variable(V), Value, apply(Action, State)) :-
 
 % Check that variables have unique values
 :- variable(Variable), not 1 {holds(Variable, Value, S) : contains(Variable, Value)} 1, expanded(S, depth).
+%error(Variable, N, S) :- variable(Variable), N = #count{Value : holds(Variable, Value, S), contains(Variable, Value)}, expanded(S, depth).
+%#show error(Variable, N, S) : error(Variable, N, S), N != 1.
 
 % Check mutexes
 :- mutexGroup(MutexGroup), not {holds(Variable, Value, S) : contains(MutexGroup, Variable, Value)} 1, expanded(S, depth).
@@ -110,10 +116,9 @@ transition(State, Other) :-
 #show constant(X) : constant(X).
 #show holds(Var, V, S) : holds(Var, V, S), state(S, depth).
 
-#program show_numbered(depth).
+#program show_numbered(depth, start).
 
-old(N) :- N = #count{S : state(S, D), D < depth}.
-stateId(S, N + M) :- state(S, depth), old(N), M = #count{T : state(T, depth), T < S}.
+stateId(S, start + M) :- state(S, depth), M = #count{T : state(T, depth), T < S}.
 
 #show stateId(S, Id) : stateId(S, Id), state(S, depth).
 #show state(Id, depth) : state(S, depth), stateId(S, Id).

@@ -7,21 +7,28 @@ from features.logic import Logic
 from features.model_util import SymbolSet, write_symbols
 from typing import List, Optional
 import argparse
+from pathlib import Path
+import sys
+import json
 
 def run_plasp(in_file):
     return subprocess.run([features.logic.PLASP_PATH, 'translate', in_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
 
+#TODO: conditional effects are not properly translated by plasp.
+
 class Instance:
-    def __init__(self, pddl, numbered=True):
-        self.pddl = pddl
-        self.rules = run_plasp(self.pddl)
-        self.numbered = numbered
-        self.__depth = None
-        self.__complete = False
-        self.__changed = False
-        self.__hold = None
-        self.symbols = SymbolSet([])
-        self.__init_encoding()
+    def __init__(self, pddl=None, numbered=True, load_info=None):
+        if load_info != None:
+            self.load(**load_info)
+        else:
+            self.pddl = str(Path(pddl).absolute())
+            self.rules = run_plasp(self.pddl)
+            self.numbered = numbered
+            self.__depth = None
+            self.__complete = False
+            self._relevant = None
+            self.symbols = SymbolSet([])
+            self.__init_encoding()
         
     def __init_encoding(self):
         def get_null_pred(variables):
@@ -65,21 +72,30 @@ class Instance:
     def next_depth(self):
         return 0 if self.depth is None else self.depth + 1
 
-    def expand(self):
+    def expand(self, index_start=None):
+        if self.is_complete(): return
+        if index_start == None:
+            index_start = self.state_number()
         with solver.create_solver() as ctl:
             self.init_solver(ctl)
             ctl.ground([('base', []), ("expand", [self.next_depth()])])
             ctl.solve()
+            #symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            #assert(len(symbols) == 1)
+            #print(symbols)
             ctl.cleanup()
             ctl.ground([("prune", [self.next_depth()])])
             ctl.solve()
-            show_prog = 'show_numbered' if self.numbered else 'show_default' 
-            ctl.ground([(show_prog, [self.next_depth()])])
+            #symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            #assert(len(symbols) == 1)
+            if self.numbered:
+                ctl.ground([('show_numbered', [self.next_depth(), index_start])])
+            else:
+                ctl.ground([('show_default', [self.next_depth()])]) 
             symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
             assert(len(symbols) == 1)
             symbols = symbols[0]
             ctl.cleanup()
-            
             old_states = self.symbols.count_atoms('state', 1)
             self.symbols.add_symbols(symbols)
             new_states = self.symbols.count_atoms('state', 1)
@@ -87,7 +103,6 @@ class Instance:
                 self.__complete = True
             else:
                 self.__depth = self.next_depth()
-                self.__changed = True
 
     def state_number(self):
         if self.symbols is None: return 0
@@ -123,39 +138,89 @@ class Instance:
         if self.symbols is None: return []
         return self.symbols.get_atoms('goal', 1)
 
-    def get_encoding(self):
-        if self.__changed:
-            with solver.create_solver() as ctl:
-                self.init_solver(ctl)
-                ctl.addSymbols(self.get_predicates() + self.get_const())
-                ctl.ground([('base', []), ('hold', [])])            
-                symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-                assert(len(symbols) == 1)
-                self.__hold = symbols[0]
-        return self.__hold + self.get_predicates() + self.get_const() + \
-               self.get_states() + self.get_transitions() + self.get_goal()
+    def get_encoding(self, max_depth=None, optimal=False):
+        max_depth = max_depth if max_depth != None else self.depth
+        assert(not optimal or self.is_goal())
+        optimal = int(optimal)
+        
+        with solver.create_solver() as ctl:
+            self.init_solver(ctl)
+            ctl.addSymbols(self.get_predicates() + self.get_const())
+            if optimal:
+                ctl.addSymbols(self.get_relevant())
+            ctl.ground([('base', []), ('hold', []), ('get_encoding', [max_depth, optimal])])            
+            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(symbols) == 1)
+            symbols = symbols[0]
+        return symbols + self.get_predicates() + self.get_const()
 
+    def load(self, pddl, numbered, depth, complete, file_n):
+        self.pddl = pddl
+        self.rules = run_plasp(self.pddl)
+        self.numbered = numbered
+        self.__depth = depth
+        self.__complete = complete
+        with solver.create_solver() as ctl:
+            ctl.load(file_n)
+            ctl.ground([Logic.base])
+            sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            assert(len(sym) == 1)
+            self.symbols = SymbolSet(sym[0])
+        self.__init_encoding()
+
+    def store(self, path):
+        write_symbols(self.symbols.get_all_atoms(), path)
+        info = {
+            'pddl': self.pddl,
+            'numbered': self.numbered,
+            'depth': self.__depth,
+            'complete': self.__complete,
+            'file_n': path
+        }
+        return info
+
+    def get_relevant(self):
+        assert(self.is_goal())
+        if self._relevant is None:
+            with solver.create_solver() as ctl:
+                ctl.load(Logic.sample_marking)
+                ctl.addSymbols(self.get_goal() + self.symbols.get_atoms('state', 2) + self.get_transitions())
+                ctl.ground([Logic.base, ('relevant', [])])
+                sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+                assert(len(sym) == 1)
+                self._relevant = sym[0]
+        return self._relevant
 
 class Sample:
-    def __init__(self, instances: List[Instance]):
-        self.instances = instances
+    def __init__(self, instances: List[Instance]=None, load_path = None):
+        if load_path == None:
+            self.instances = instances
+            self.depth = None
+            self.state_count = 0
+            self.transition_count = 0
+        else:
+            self.load(load_path)
 
     def expand_states(self, depth=None, states=None, transitions=None, goal_req=False, complete=False):
-        d = -1
-        s_n = 0
-        t_n = 0
+        d = self.depth if self.depth != None else -1
+        s_n = self.state_count
+        t_n = self.transition_count
         stop = False
 
         while not stop:
-            print('Expanding depth {}'.format(d+1))
             stop = True
+            s_aux = s_n
             for instance in self.instances:
+                s_old = instance.state_number()
                 if (depth != None and d < depth) or (states != None and s_n < states) \
                         or (transitions != None and t_n < transitions) \
                         or (goal_req and not instance.is_goal()) or (complete and not instance.is_complete()):
-                    instance.expand()
+                    instance.expand(index_start=s_aux)
+                    s_aux += instance.state_number() - s_old
                     stop = False
+            
             if not stop:
+                print('Expanded depth {}'.format(d+1))
                 d += 1
                 s_n = 0
                 t_n = 0
@@ -167,6 +232,9 @@ class Sample:
         self.depth = depth
         self.state_count = s_n
         self.transition_count = t_n
+
+    def get_instances(self):
+        return self.instances
 
     def is_goal(self):
         return all([inst.is_goal() for inst in self.instances])
@@ -198,6 +266,91 @@ class Sample:
         for instance in self.instances:
             result += instance.get_encoding()
         return result
+
+    def load(self, path):
+        path = Path(path)
+        with open(str(path/'sample.json'), 'r') as fp:
+            info = json.load(fp)
+        self._load(**info)
+        
+    def _load(self, depth, states, transitions, instances):
+        self.depth = depth
+        self.state_count = states
+        self.transition_count = transitions
+        self.instances = []
+        for inst in instances:
+            self.instances.append(Instance(load_info=inst))
+
+    def store(self, path):
+        path = Path(path)
+        if not path.is_dir():
+            try:
+                path.mkdir()
+            except (FileNotFoundError, FileExistsError) as e:
+                print(repr(e))
+                sys.exit()
+        info = {
+            'depth': self.depth,
+            'states': self.state_count,
+            'transitions': self.transition_count,
+            'instances': []
+        }
+        for i, instance in enumerate(self.instances):
+            info['instances'].append(instance.store(str(path/'instance_{}.lp'.format(i))))
+        with open(str(path/'sample.json'), 'w') as fp:
+            json.dump(info, fp)
+
+    def get_relevant(self):
+        result = []
+        for inst in self.instances:
+            result += inst.get_relevant()
+        return result
+
+    def print_info(self):
+        print(('Number of states: {}\nNumber of transitions: {}\n'
+            'Includes goals: {}\nComplete sample: {}\n')
+            .format(self.state_count,self.transition_count,self.is_goal(),self.is_complete()))
+
+class SampleView:
+    def __init__(self, sample: Sample, max_depth, optimal):
+        inst = sample.get_instances()
+        sym = []
+        for i in inst:
+            sym += i.get_encoding(max_depth= max_depth, optimal= optimal)
+        self.symbols = SymbolSet(sym)
+        self._complete = sample.depth <= max_depth
+
+    def is_goal(self):
+        return self.symbols.count_atoms('goal', 1) > 0
+
+    def is_complete(self):
+        return self._complete
+
+    def get_states(self) -> List[clingo.Symbol]:
+        return self.symbols.get_atoms('state', 1) + self.symbols.get_atoms('stateId', 2)
+
+    def get_const(self) -> List[clingo.Symbol]:
+        const = {}
+        for c in self.symbols.get_atoms('const', 1):
+            const[c] = True
+        return list(const.keys())
+
+    def get_transitions(self) -> List[clingo.Symbol]:
+        return self.symbols.get_atoms('transition', 2)
+
+    def get_sample(self) -> List[clingo.Symbol]:
+        return self.symbols.get_all_atoms()
+
+    def get_relevant(self):
+        return self.symbols.get_atoms('relevant', 2)
+
+    def print_info(self):
+        print(('Number of states: {}\nNumber of transitions: {}\n'
+                'Includes goals: {}\nComplete sample: {}\n')
+                .format(
+                    self.symbols.count_atoms('state', 1),
+                    self.symbols.count_atoms('transition', 2),
+                    self.is_goal(),self.is_complete()))
 
 class SampleFile:
     def __init__(self, s_file):
@@ -232,15 +385,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--pddl', nargs='+', required=True, help='Input instances in PDDL files')
     parser.add_argument('--symbol', action='store_true', help='Represent states in plain symbols instead of numericaly')
-    parser.add_argument('-d', '--depth', default=6, type=int, help='Minimum expansion depth required')
+    parser.add_argument('-d', '--depth', default=None, type=int, help='Minimum expansion depth required')
     parser.add_argument('-s', dest='states', type=int, help='Minimum number of states required')
     parser.add_argument('-t', dest='transitions', type=int, help='Minimum number of transitions required')
     parser.add_argument('--complete', action='store_true', help='Expand all state space (could be too big!)')
     parser.add_argument('--goal', action='store_true', help='Ensure there is at least one goal per instance')
+    parser.add_argument('--relevant', action='store_true', help='Print relevant transitions of the sample')
     parser.add_argument('--out', required=True, help='Output file path')
+    parser.add_argument('-load', default=None, help='Load from stored sample')
     args = parser.parse_args()
-    instances = [Instance(p, numbered=not args.symbol) for p in args.pddl]
-    sample = Sample(instances)
+    if args.load == None:
+        instances = [Instance(p, numbered=not args.symbol) for p in args.pddl]
+        sample = Sample(instances=instances)
+    else:
+        sample = Sample(load_path=args.load)
     sample.expand_states(
         depth=args.depth,
         states=args.states,
@@ -248,4 +406,6 @@ if __name__ == "__main__":
         goal_req=args.goal,
         complete=args.complete
     )
-    write_symbols(sample.get_sample(), args.out)
+    if args.relevant:
+        print(sample.get_relevant())
+    sample.store(args.out)

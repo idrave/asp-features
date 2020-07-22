@@ -35,8 +35,8 @@ hold(State, Pred, Const) :-
 hold(State, Pred, (Const1, Const2)) :-
 	holds(variable((Pred,constant(Const1), constant(Const2))),value(variable((Pred,constant(Const1), constant(Const2))),true),State).
 
-#show hold(S, P) : hold(S, P).
-#show hold(S, P, X) : hold(S, P, X).
+%#show hold(S, P) : hold(S, P).
+%#show hold(S, P, X) : hold(S, P, X).
 
 %%%% Safety constraints %%%%
 
@@ -49,18 +49,15 @@ hold(State, Pred, (Const1, Const2)) :-
 pair(X) :- X = (A,B), const(A), const(B). 
 :- hold(State, Pred, Const), arity(Pred, 2), not pair(Const).
 
-#program relevant.
-%Select one optimal plan as relevant transitions
+#program get_encoding(max_depth, optimal).
 
-optimalCost(Cost) :- Cost = #min{X : goal(S), state(S, X)}.
+show(State) :- state(State, Depth), Depth <= max_depth.
+show(State) :- state(State), 1 {relevant(State, _); relevant(_, State)}, optimal = 1.
 
-optimalGoal(Goal) :- state(Goal, Depth), optimalCost(Depth), goal(Goal),
-	Goal <= X : state(X, Depth), goal(X).
-
-relevant(State, Goal) :- optimalGoal(Goal), state(Goal, Depth), 
-	transition(State, Goal), state(State, Depth-1),
-	State <= X : transition(X, Goal), state(X, Depth-1).
-
-relevant(State1, State2) :- state(State2, Depth), relevant(State2, _), 
-	transition(State1, State2), state(State1, Depth-1),
-	State1 <= X : transition(X, State2), state(X, Depth-1).
+#show state(State) : show(State).
+#show state(State, Depth) : state(State, Depth), show(State).
+#show stateId(State, Id) : stateId(State, Id), show(State).
+#show hold(State, Pred) : hold(State, Pred), show(State).
+#show hold(State, Pred, Const) : hold(State, Pred, Const), show(State).
+#show transition(St1, St2) : transition(St1, St2), show(St1).
+#show goal(Goal) : goal(Goal), show (Goal).
