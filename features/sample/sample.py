@@ -8,6 +8,7 @@ from features.model_util import SymbolSet, write_symbols
 from typing import List, Optional
 import argparse
 from pathlib import Path
+import logging
 import sys
 import json
 
@@ -223,6 +224,7 @@ class Sample:
 
     def expand_states(self, depth=None, states=None, transitions=None, goal_req=False, complete=False):
         d = self.depth if self.depth != None else -1
+        logging.debug('Expanding from {}'.format(d))
         s_n = self.state_count
         t_n = self.transition_count
         stop = False
@@ -249,7 +251,7 @@ class Sample:
                     t_n += instance.transition_number()
                 print('States {}. Transitions {}.'.format(s_n, t_n))
 
-        self.depth = depth
+        self.depth = d
         self.state_count = s_n
         self.transition_count = t_n
 
@@ -329,6 +331,7 @@ class Sample:
     def get_view(self, depth=None, states=None, transitions=None,
                  goal_req=False, complete=False, optimal=False):
         goal_req = goal_req or optimal
+        logging.debug('View from sample of depth {}'.format(self.depth))
         self.expand_states(
             depth=depth, states=states, transitions=transitions,
             goal_req=goal_req, complete=complete
@@ -337,7 +340,7 @@ class Sample:
 
         s_n = 0
         t_n = 0
-        for d in range(self.depth+1):
+        for d in range(self.depth+2):
             for inst in self.instances:
                 s_n += inst.state_number(depth=d)
                 t_n += inst.transition_number(depth=d)
@@ -358,13 +361,21 @@ class Sample:
 
 class SampleView:
 
-    def __init__(self, sample: Sample, max_depth=None, optimal=None):
+    def __init__(self, sample: Sample, max_depth=None, optimal=False):
+        max_depth = max_depth if max_depth != None else sample.depth
         inst = sample.get_instances()
         sym = []
         for i in inst:
             sym += i.get_encoding(max_depth= max_depth, optimal= optimal)
+            if optimal:
+                sym += i.get_relevant()
         self.symbols = SymbolSet(sym)
-        self._complete = sample.depth <= max_depth
+        self._complete = sample.is_complete() and sample.depth <= max_depth
+        if max_depth == None or sample.depth <= max_depth:
+            self.depth = sample.depth
+        else:
+            self.depth = max_depth
+        self.optimal = optimal
 
     def is_goal(self):
         return self.symbols.count_atoms('goal', 1) > 0
@@ -391,9 +402,11 @@ class SampleView:
         return self.symbols.get_atoms('relevant', 2)
 
     def print_info(self):
-        print(('Number of states: {}\nNumber of transitions: {}\n'
+        print(('Sample up to depth: {}. Optimal solution included: {}\n'
+                'Number of states: {}\nNumber of transitions: {}\n'
                 'Includes goals: {}\nComplete sample: {}\n')
                 .format(
+                    self.depth, self.optimal,
                     self.symbols.count_atoms('state', 1),
                     self.symbols.count_atoms('transition', 2),
                     self.is_goal(),self.is_complete()))

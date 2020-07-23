@@ -55,7 +55,7 @@ show_all(State) :- state(State, Depth), Depth <= max_depth.
 show_all(State) :- state(State), 1 {relevant(State, _); relevant(_, State)}, optimal = 1.
 
 show(State) :- show_all(State).
-show(St2) :- show_all(St1), transition(St1, St2)
+show(St2) :- show_all(St1), transition(St1, St2).
 
 #show state(State) : show(State).
 #show state(State, Depth) : state(State, Depth), show(State).

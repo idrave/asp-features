@@ -3,7 +3,7 @@ from features.comparison import CompareConcept
 import logging
 from features.solver import SolverType
 import features.solver as solver
-from features.sample.sample import Instance, Sample
+from features.sample.sample import Instance, Sample, SampleView
 from features.grammar import Grammar
 from features.feat import Features
 from pathlib import Path
@@ -78,17 +78,21 @@ if __name__ == "__main__":
         sample = Sample(load_path=str(Path(args.load)/'sample'))
     else:
         sample = Sample(instances=[Instance(pddl, numbered=(not args.symbol)) for pddl in args.pddl])
-    grammar = Grammar(sample, str(out_path/'concepts'), comp_type=args.compare)
-    if args.load:
-        grammar.load_progress()
-    features = Features(sample, grammar, str(out_path), distance=args.dist, load = args.load != None)
     print(args.depth)
     if not args.sat:
         sample.expand_states(
             depth=args.depth, states=args.states, transitions=args.transitions,
             goal_req=args.goal, complete=args.complete
         )
-        sample.store(str(out_path/'sample'))
+    sample_v = sample.get_view(
+        depth=args.depth, states=args.states, transitions=args.transitions,
+        goal_req=args.goal, complete=args.complete, optimal=True
+    )
+    if not args.sat: sample.store(str(out_path/'sample'))
+    grammar = Grammar(sample_v, str(out_path/'concepts'), comp_type=args.compare)
+    if args.load:
+        grammar.load_progress()
+    features = Features(sample_v, grammar, str(out_path), distance=args.dist, load = args.load != None)
     if not args.sat:
         while (args.features != None and features.feature_count() < args.features) or \
                 (args.cost != None and features.cost < args.cost):
@@ -98,17 +102,17 @@ if __name__ == "__main__":
             )
     
     #solution, (time_g, mem_g), (time_s, mem_s) = solve_T_G(sample, features)
-    sample.print_info()
+    sample_v.print_info()
     print('Total concepts: {}\nTotal features: {}'.format(grammar.total_concepts, features.total_features))
     
     #print('Grounding took {}s, min memory {} MB, max memory {} MB'.format(round(time_g, 3), round(min(mem_g)/1e6, 3), round(max(mem_g)/1e6, 3)))
     #logging.debug('Profiling samples: {}'.format(len(mem_s)))
-    solution, t, mem = solve_T_G_subprocess(sample, features, args.out)
+    solution, t, mem = solve_T_G_subprocess(sample_v, features, args.out)
     logging.debug('Profiling samples: {}'.format(len(mem)))
     #print('Solving took {}s, min memory {} MB, max memory {} MB'.format(round(time_s, 3), round(min(mem_s)/1e6, 3), round(max(mem_s)/1e6, 3)))
     print('Solving took {}s, start memory {} MB, max memory {} MB'.format(round(t, 3), round(min(mem)/1e6, 3), round(max(mem)/1e6, 3)))
     print('Solutions found: {}'.format(len(solution)))
-    print('Optimal solution: {}. Cost: {}.'.format(*solution[-1] if len(solution) > 0 else None))
+    print('Optimal solution: {}. Cost: {}.'.format(*solution[-1] if len(solution) > 0 else (None, None)))
     #print(round(t, 3), round(mem[0]/1e6, 3), round(max(mem)/1e6, 3))
     
     
