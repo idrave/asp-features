@@ -51,13 +51,16 @@ pair(X) :- X = (A,B), const(A), const(B).
 
 #program get_encoding(max_depth, optimal).
 
-show(State) :- state(State, Depth), Depth <= max_depth.
-show(State) :- state(State), 1 {relevant(State, _); relevant(_, State)}, optimal = 1.
+show_all(State) :- state(State, Depth), Depth <= max_depth.
+show_all(State) :- state(State), 1 {relevant(State, _); relevant(_, State)}, optimal = 1.
+
+show(State) :- show_all(State).
+show(St2) :- show_all(St1), transition(St1, St2)
 
 #show state(State) : show(State).
 #show state(State, Depth) : state(State, Depth), show(State).
 #show stateId(State, Id) : stateId(State, Id), show(State).
 #show hold(State, Pred) : hold(State, Pred), show(State).
 #show hold(State, Pred, Const) : hold(State, Pred, Const), show(State).
-#show transition(St1, St2) : transition(St1, St2), show(St1).
-#show goal(Goal) : goal(Goal), show (Goal).
+#show transition(St1, St2) : transition(St1, St2), show_all(St1).
+#show goal(Goal) : goal(Goal), show(Goal).

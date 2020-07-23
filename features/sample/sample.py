@@ -29,6 +29,8 @@ class Instance:
             self._relevant = None
             self.symbols = SymbolSet([])
             self.__init_encoding()
+            self._state_n = []      #Number of states in each depth
+            self._transition_n = [] #Number of transitions starting in each depth-1
         
     def __init_encoding(self):
         def get_null_pred(variables):
@@ -80,14 +82,9 @@ class Instance:
             self.init_solver(ctl)
             ctl.ground([('base', []), ("expand", [self.next_depth()])])
             ctl.solve()
-            #symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-            #assert(len(symbols) == 1)
-            #print(symbols)
             ctl.cleanup()
             ctl.ground([("prune", [self.next_depth()])])
             ctl.solve()
-            #symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-            #assert(len(symbols) == 1)
             if self.numbered:
                 ctl.ground([('show_numbered', [self.next_depth(), index_start])])
             else:
@@ -95,22 +92,40 @@ class Instance:
             symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
             assert(len(symbols) == 1)
             symbols = symbols[0]
+            
             ctl.cleanup()
-            old_states = self.symbols.count_atoms('state', 1)
+            old_states = self.state_number()
             self.symbols.add_symbols(symbols)
-            new_states = self.symbols.count_atoms('state', 1)
+            new_states = self.state_number()
+            self._state_n.append(new_states)
+            self._transition_n.append(self.transition_number())
             if new_states == old_states:
                 self.__complete = True
             else:
                 self.__depth = self.next_depth()
 
-    def state_number(self):
+    def state_number(self, depth=None):
+        """
+        Number of states in the whole instance. If depth is specified,
+        number of states with such depth
+        """
+        assert(depth == None or depth >= 0)
         if self.symbols is None: return 0
-        return self.symbols.count_atoms('state', 1)
+        if depth == None: return self.symbols.count_atoms('state', 1)
+        if depth > self.depth: return 0
+        return self._state_n[depth]
+         
 
-    def transition_number(self):
+    def transition_number(self, depth=None):
+        """
+        Number of transitions in the whole instance. If depth is specified,
+        number of transitions starting in a node with such depth-1
+        """
+        assert(depth == None or depth >= 0)
         if self.symbols is None: return 0
-        return self.symbols.count_atoms('transition', 2)
+        if depth == None: return self.symbols.count_atoms('transition', 2)
+        if depth > self.depth: return 0
+        return self._transition_n[depth]
 
     @property
     def depth(self):
@@ -154,7 +169,7 @@ class Instance:
             symbols = symbols[0]
         return symbols + self.get_predicates() + self.get_const()
 
-    def load(self, pddl, numbered, depth, complete, file_n):
+    def load(self, pddl, numbered, depth, complete, file_n, state_n, transition_n):
         self.pddl = pddl
         self.rules = run_plasp(self.pddl)
         self.numbered = numbered
@@ -167,6 +182,8 @@ class Instance:
             assert(len(sym) == 1)
             self.symbols = SymbolSet(sym[0])
         self.__init_encoding()
+        self._state_n = state_n
+        self._transition_n = self._transition_n
 
     def store(self, path):
         write_symbols(self.symbols.get_all_atoms(), path)
@@ -175,7 +192,9 @@ class Instance:
             'numbered': self.numbered,
             'depth': self.__depth,
             'complete': self.__complete,
-            'file_n': path
+            'file_n': path,
+            'state_n': self._state_n,
+            'transition_n': self._transition_n
         }
         return info
 
@@ -190,6 +209,7 @@ class Instance:
                 assert(len(sym) == 1)
                 self._relevant = sym[0]
         return self._relevant
+
 
 class Sample:
     def __init__(self, instances: List[Instance]=None, load_path = None):
@@ -305,14 +325,40 @@ class Sample:
         for inst in self.instances:
             result += inst.get_relevant()
         return result
+    
+    def get_view(self, depth=None, states=None, transitions=None,
+                 goal_req=False, complete=False, optimal=False):
+        goal_req = goal_req or optimal
+        self.expand_states(
+            depth=depth, states=states, transitions=transitions,
+            goal_req=goal_req, complete=complete
+        )
+        if complete: return SampleView(self)
+
+        s_n = 0
+        t_n = 0
+        for d in range(self.depth+1):
+            for inst in self.instances:
+                s_n += inst.state_number(depth=d)
+                t_n += inst.transition_number(depth=d)
+            if (states == None or s_n >= states) and (transitions == None or t_n >= transitions):
+                break
+
+        depth = max(depth, d)
+        assert(
+            self.is_complete() or 
+            ((states == None or s_n >= states) and (transitions == None or t_n >= transitions)))
+        return SampleView(self, max_depth=depth, optimal=optimal)
 
     def print_info(self):
         print(('Number of states: {}\nNumber of transitions: {}\n'
             'Includes goals: {}\nComplete sample: {}\n')
             .format(self.state_count,self.transition_count,self.is_goal(),self.is_complete()))
 
+
 class SampleView:
-    def __init__(self, sample: Sample, max_depth, optimal):
+
+    def __init__(self, sample: Sample, max_depth=None, optimal=None):
         inst = sample.get_instances()
         sym = []
         for i in inst:
