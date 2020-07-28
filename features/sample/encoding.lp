@@ -12,6 +12,10 @@ goal(S)                S is a goal state
 #show.
 #defined relevant/2.
 #defined holdsState/3.
+#defined const/1.
+#defined state/1.
+#defined goal/1.
+#defined holds/3.
 
 %%%% Perform the encoding %%%%
 
@@ -34,9 +38,6 @@ hold(State, Pred, Const) :-
 	holds(variable((Pred,constant(Const))),value(variable((Pred,constant(Const))),true),State).
 hold(State, Pred, (Const1, Const2)) :-
 	holds(variable((Pred,constant(Const1), constant(Const2))),value(variable((Pred,constant(Const1), constant(Const2))),true),State).
-
-%#show hold(S, P) : hold(S, P).
-%#show hold(S, P, X) : hold(S, P, X).
 
 %%%% Safety constraints %%%%
 

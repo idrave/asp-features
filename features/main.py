@@ -4,6 +4,7 @@ import logging
 from features.solver import SolverType
 import features.solver as solver
 from features.sample.sample import Instance, Sample, SampleView
+from features.sample.problem import Problem
 from features.grammar import Grammar
 from features.feat import Features
 from pathlib import Path
@@ -77,7 +78,7 @@ if __name__ == "__main__":
     if args.load != None:
         sample = Sample(load_path=str(Path(args.load)/'sample'))
     else:
-        sample = Sample(instances=[Instance(pddl, numbered=(not args.symbol)) for pddl in args.pddl])
+        sample = Sample(instances=[Instance(Problem(pddl), numbered=(not args.symbol)) for pddl in args.pddl])
     print(args.depth)
     if not args.sat:
         sample.expand_states(
@@ -109,6 +110,7 @@ if __name__ == "__main__":
     #logging.debug('Profiling samples: {}'.format(len(mem_s)))
     solution, t, mem = solve_T_G_subprocess(sample_v, features, args.out)
     logging.debug('Profiling samples: {}'.format(len(mem)))
+    logging.debug('Relevant: {}'.format(sample_v.get_relevant()))
     #print('Solving took {}s, min memory {} MB, max memory {} MB'.format(round(time_s, 3), round(min(mem_s)/1e6, 3), round(max(mem_s)/1e6, 3)))
     print('Solving took {}s, start memory {} MB, max memory {} MB'.format(round(t, 3), round(min(mem)/1e6, 3), round(max(mem)/1e6, 3)))
     print('Solutions found: {}'.format(len(solution)))

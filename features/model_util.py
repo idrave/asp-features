@@ -51,7 +51,7 @@ class SymbolSet:
         self.add_symbols(symbols)
 
     def add_symbols(self, symbols: List[clingo.Symbol]):
-        for sym in symbols:
+         for sym in symbols:
             assert(isinstance(sym, clingo.Symbol))
             if sym.type == clingo.SymbolType.Number:
                 self.__numbers.append(sym)
@@ -69,7 +69,6 @@ class SymbolSet:
         return self.__strings
 
     def __add_func(self, atom: clingo.Function):
-
         name = atom.name
         arity = len(atom.arguments)
         positive = atom.positive
@@ -79,6 +78,22 @@ class SymbolSet:
             self.__func[name][arity] = ([], [])
         
         self.__func[name][arity][positive].append(atom.arguments)
+
+    def has_atom(self, atom: clingo.Symbol) -> bool:
+        if atom.type == clingo.SymbolType.Number:
+            for a2 in self.numbers:
+                if eq_symbol(atom, a2): return True
+            return False
+        if atom.type == clingo.SymbolType.String:
+            for a2 in self.strings:
+                if eq_symbol(atom, a2): return True
+            return False
+        if atom.type == clingo.SymbolType.Function:
+            for a2 in self.get_atoms(atom.name, len(atom.arguments), positive=atom.positive):
+                if eq_symbol(atom, a2): return True
+            return False
+        return False
+            
 
     def get_atoms(self, name, arity, positive=True) -> List[clingo.Symbol]:
         if name not in self.__func or arity not in self.__func[name]:
@@ -97,6 +112,20 @@ class SymbolSet:
                 result += self.get_atoms(n, a, positive=False)
         return result
 
+def eq_symbol(s1: clingo.Symbol, s2: clingo.Symbol):
+    if s1.type != s2.type:
+        return False
+    if s1.type == clingo.SymbolType.Number:
+        return s1.number == s2.number
+    if s1.type == clingo.SymbolType.String:
+        return s1.string == s2.string
+    if s1.type == clingo.SymbolType.Function:
+        if s1.name != s2.name or len(s1.arguments) != len(s2.arguments) or s1.positive != s2.positive:
+            return False
+        return all([eq_symbol(a1, a2) for a1, a2 in zip(s1.arguments, s2.arguments)])
+    return True
+
+
 def check_multiple(models):
     if len(models) == 0:
         raise RuntimeError("Not satisfiable!")
@@ -110,31 +139,13 @@ def write_symbols(symbols, filename, type_='w'):
 def count_symbols(symbols, name, arity):
     return len(list(filter(lambda s: s.match(name, arity), symbols)))
 
-
-class ModelUtil:
-    def __init__(self, symbols : list):
-        self.symbols = symbols
-
-    def __str__(self):
-        return symbol_to_str(self.symbols)
-
-    def get_symbols(self, filter=None):
-        if filter is None: return self.symbols
-        model_str = []
-        for symbol in self.symbols:
-            if (symbol.name, len(symbol.arguments)) in filter:
-                model_str.append(symbol)
-        return model_str
-
-    def write(self, filename, type_='w'):
-        with open(filename, type_) as file:
-            file.write(str(self))
-
-    def count_symbol(self, symbol_compare):
-        count = 0
-        for symbol in self.symbols:
-            if (symbol.name,len(symbol.arguments)) == symbol_compare:
-                count += 1
-        return count
-
-
+class SymbolHash:
+    def __init__(self, symbol: clingo.Symbol):
+        self._symbol = symbol
+    def __hash__(self):
+        return hash(str(self._symbol))
+    def __eq__(self, other):
+        return eq_symbol(self.symbol, other.symbol)
+    @property
+    def symbol(self):
+        return self._symbol

@@ -7,6 +7,7 @@ PLASP_PATH = '/home/ivan/Documents/ai/features/plasp/plasp/build/release/bin/pla
 class Logic:
     logicPath = Path(__file__).parent.absolute()
     #logicPath = Path('/home/ivan/Documents/ai/features/features')
+    problem = str(logicPath/'sample/problem.lp')
     sample_file = str(logicPath/'sample/expand_states.lp')
     sample_encoding = str(logicPath/'sample/encoding.lp')
     sample_marking = str(logicPath/'mark.lp')

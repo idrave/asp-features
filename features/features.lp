@@ -58,18 +58,37 @@ cost(conc(C), N) :- conc(C, N), num(conc(C)).
 hasValue(conc(C), true, S) :- bool(conc(C)), cardinality(C, 1, S).
 hasValue(conc(C), N, S) :- num(conc(C)), cardinality(C, N, S).
 
+#program dist_pos(pos).
+#show pos(Conc, pos) : conc(Conc, _).
+
 #program distFeature(k).
-num(dist(C1, R, C, C2)) :- conc(C1, M), role(R), cost(R, N), conc(C, O), conc(C2, P),
-                            M+N+O+P <= k.
+valid(dist(C1, R, C, C2)) :-
+    conc(C1, M), role(R, N), conc(C, O), conc(C2, P),
+    pos(C1, 0), pos(C, 1), pos(C2, 2), M+N+O+P <= k.
 
-cost(dist(C1, R, C, C2), A) :- num(dist(C1, R, C, C2)), conc(C1, M), role(R),
-                            cost(R, N), conc(C, O), conc(C2, P), A=M+N+O+P.
+#program dist_const(dist).
 
-hasValue(dist(C1, R, C, C2), 2, S) :- num(dist(C1, R, C, C2)), state(S), const(X), const(Y),
-                        belong(X, C1, S), belong((X, Y), R, S), belong(Y, C, S), belong(Y, C2, S).
+dist_const(Const, Role, Conc, Conc2, 1, State) :-
+    const(Const), valid(dist(_, Role, Conc, Conc2)), state(State), dist = 1,
+    belong(Const, Conc2, State).
 
-hasValue(dist(C1, R, C, C2), N, S) :- num(dist(C1, R, C, C2)), state(S), not hasValue(dist(C1, R, C, C2), 2, S),
-                        N-1 = #min{M : const(X), const(Y), belong(X, C1, S), belong((X, Y), R, S),
-                        belong(Y, C, S), hasValue(dist(nomi(Y), R, C, C2), M, S)}.
+dist_const(Const, Role, Conc, Conc2, dist, State) :- dist > 1,
+    not dist_const(Const, Role, Conc, Conc2, Dist, State) : Dist = 0..dist-1;
+    const(Const), valid(dist(_, Role, Conc, Conc2)), state(State),
+    const(Other), belong((Const, Other), Role, State),
+    belong(Other, Conc, State), dist_const(Other, Role, Conc, Conc2, dist-1, State).
+#show continue(dist) : dist_const(_,_,_,_,dist,_).
 
+#program value_dist.
 
+num(dist(C1, R, C, C2)) :-
+    valid(dist(C1, R, C, C2)), const(Const), state(State),
+    belong(Const, C1, State), dist_const(Const, R, C, C2, _, State).
+
+hasValue(dist(C1, R, C, C2), Dist, S) :-
+    num(dist(C1, R, C, C2)), state(S),
+    Dist = #min{D : const(Const), belong(Const, C1, S), dist_const(Const, R, C, C2, D, S)}.
+
+cost(dist(C1, R, C, C2), A) :-
+    num(dist(C1, R, C, C2)), conc(C1, M), role(R, N), conc(C, O), conc(C2, P),
+    pos(C1, 0), pos(C, 1), pos(C2, 2), A=M+N+O+P.
