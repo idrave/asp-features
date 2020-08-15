@@ -11,6 +11,8 @@
 #defined conc/2.
 #defined qualValue/3.
 #defined delta/4.
+#defined dist_const/6.
+#defined valid/1.
 #show.
 #program feature.
 
@@ -28,14 +30,32 @@ delta(S1, S2, F, null) :- transition(S1, S2), prefeature(F), hasValue(F, M, S1),
 
 prefeature(F) :- bool(F).
 prefeature(F) :- num(F).
-
-
+%*
 #show bool(F) : bool(F).
 #show num(F) : num(F).
 #show prefeature(F) : prefeature(F).
 #show cost(F, N) : cost(F, N).
 #show qualValue(F, V, S) : qualValue(F, V, S).
 #show delta(S, T, F, V) : delta(S, T, F, V).
+*%
+1 = {show(Feat) : prefeature(Feat)}.
+
+#show bool(F) : bool(F), show(F).
+#show num(F) : num(F), show(F).
+#show prefeature(F) : prefeature(F), show(F).
+#show cost(F, N) : cost(F, N), show(F).
+#show qualValue(F, V, S) : qualValue(F, V, S), show(F).
+#show delta(S, T, F, V) : delta(S, T, F, V), show(F).
+
+#program to_feature(id).
+:- 1 != #count{Feat : prefeature(Feat)}.
+#show featureId(F, id) : prefeature(F).
+#show feature(id).
+#show bool(id) : bool(F), feature(F).
+#show num(id) : num(F), feature(F).
+#show cost(id, C) : cost(F, C), prefeature(F).
+#show qualValue(id, V, S) : qualValue(F, V, S), prefeature(F).
+#show delta(S, T, id, V) : delta(S, T, F, V), prefeature(F).
 
 #program primitiveFeature.
 %general boolean rule:
@@ -68,11 +88,11 @@ valid(dist(C1, R, C, C2)) :-
 
 #program dist_const(dist).
 
-dist_const(Const, Role, Conc, Conc2, 1, State) :-
-    const(Const), valid(dist(_, Role, Conc, Conc2)), state(State), dist = 1,
-    belong(Const, Conc2, State).
+dist_const(Const, Role, Conc, Conc2, 0, State) :-
+    const(Const), valid(dist(_, Role, Conc, Conc2)), state(State), dist = 0,
+    belong(Const, Conc2, State), pos(C, 0), belong(Const, C, State).
 
-dist_const(Const, Role, Conc, Conc2, dist, State) :- dist > 1,
+dist_const(Const, Role, Conc, Conc2, dist, State) :- dist > 0,
     not dist_const(Const, Role, Conc, Conc2, Dist, State) : Dist = 0..dist-1;
     const(Const), valid(dist(_, Role, Conc, Conc2)), state(State),
     const(Other), belong((Const, Other), Role, State),

@@ -3,6 +3,7 @@ from features.logic import Logic
 import logging
 import os
 from typing import List
+import features.solver as solver
 
 def to_model_list(solve_handle):
     return [model for model in solve_handle]
@@ -111,6 +112,17 @@ class SymbolSet:
                 result += self.get_atoms(n, a, positive=True)
                 result += self.get_atoms(n, a, positive=False)
         return result
+
+    def to_str(self):
+        return symbol_to_str(self.get_all_atoms())
+
+    @staticmethod
+    def from_str(str_symbols: str):
+        with solver.create_solver() as ctl:
+            ctl.add('base', [], str_symbols)
+            ctl.ground([Logic.base])
+            sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
+        return SymbolSet(sym)
 
 def eq_symbol(s1: clingo.Symbol, s2: clingo.Symbol):
     if s1.type != s2.type:

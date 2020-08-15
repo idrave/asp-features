@@ -38,24 +38,22 @@ class Instance:
         self._transition_n = 0 #Number of transitions
         
     @staticmethod
-    def load(problem_info, numbered, depth, complete, states, optimal):
-        problem = Problem.load(**problem_info)
+    def load(problem, numbered, depth, complete, states, optimal):
+        problem = Problem.load(problem)
         instance = Instance(problem, numbered=numbered)
         instance._depth = depth
         instance._complete = complete
         assert(instance.depth+1 == len(states) )
         instance._states = []
         for d in range(instance.depth+1):
-            instance._states.append(0)
-            instance._state_n.append(0)
-            instance._transition_n.append([])
+            instance._states.append([])
             for s in states[d]:
                 node = Node.load_state(s)
                 instance._states[-1].append(node)
                 instance._st_set[node] = node
                 instance._st_id[node.id] = node
-                instance._state_n[-1] += 1
-                instance._transition_n[-1] += len(node.transitions)
+                instance._state_n += 1
+                instance._transition_n += len(node.transitions)
                 instance._next_id = max(instance._next_id, node.id + 1)
                 if node.is_goal:
                     instance._goals.append(node)
@@ -64,7 +62,7 @@ class Instance:
         return instance
 
     #TODO fix store/load
-    def store(self, path):
+    def store(self):
         info = {
             'problem': self.problem.store(),
             'numbered': self.numbered,
@@ -217,14 +215,11 @@ class Instance:
 
 
 class Sample:
-    def __init__(self, instances: List[Instance]=None, load_path = None):
-        if load_path == None:
-            self.instances = instances
-            self.depth = None
-            self.state_count = 0
-            self.transition_count = 0
-        else:
-            self.load(load_path)
+    def __init__(self, instances: List[Instance]=None):
+        self.instances = instances
+        self.depth = None
+        self.state_count = 0
+        self.transition_count = 0
 
     def expand_states(self, depth=None, states=None, transitions=None, goal_req=False, complete=False):
         d = self.depth if self.depth != None else -1
@@ -295,19 +290,21 @@ class Sample:
             result += instance.encoding()
         return result
 
-    def load(self, path):
+    @staticmethod
+    def load(path):
+        def load(sample, depth, states, transitions, instances):
+            sample.depth = depth
+            sample.state_count = states
+            sample.transition_count = transitions
+            sample.instances = []
+            for inst in instances:
+                sample.instances.append(Instance.load(**inst))
         path = Path(path)
         with open(str(path/'sample.json'), 'r') as fp:
             info = json.load(fp)
-        self._load(**info)
-        
-    def _load(self, depth, states, transitions, instances):
-        self.depth = depth
-        self.state_count = states
-        self.transition_count = transitions
-        self.instances = []
-        for inst in instances:
-            self.instances.append(Instance.load(**inst))
+        sample = Sample([])
+        load(sample, **info)
+        return sample
 
     def store(self, path):
         path = Path(path)
@@ -323,8 +320,8 @@ class Sample:
             'transitions': self.transition_count,
             'instances': []
         }
-        for i, instance in enumerate(self.instances):
-            info['instances'].append(instance.store(str(path/'instance_{}.lp'.format(i))))
+        for instance in self.instances:
+            info['instances'].append(instance.store())
         with open(str(path/'sample.json'), 'w') as fp:
             json.dump(info, fp)
 
@@ -336,13 +333,14 @@ class Sample:
     
     def get_view(self, depth=None, states=None, transitions=None,
                  goal_req=False, complete=False, optimal=False):
+        print('Optimal',optimal)
         goal_req = goal_req or optimal
         logging.debug('View from sample of depth {}'.format(self.depth))
         self.expand_states(
             depth=depth, states=states, transitions=transitions,
             goal_req=goal_req, complete=complete
         )
-        if complete: return SampleView(self)
+        if complete: return SampleView(self, optimal=optimal)
         #TODO fix sum
         depth = depth if depth != None else 0
         s_n = 0
@@ -375,6 +373,7 @@ class Sample:
 class SampleView:
 
     def __init__(self, sample: Sample, max_depth=None, optimal=False):
+        print('Generating SAMPLE AAAAAAAAAAAAAAAAAAa', optimal)
         max_depth = max_depth if max_depth != None else sample.depth
         inst = sample.get_instances()
         sym = []
@@ -383,6 +382,7 @@ class SampleView:
             sym += i.encoding(max_depth=max_depth, optimal=optimal)
             if optimal:
                 sym += i.relevant
+                print(i.relevant)
         self.symbols = SymbolSet(sym)
         self._complete = sample.is_complete and sample.depth <= max_depth
         if max_depth == None or sample.depth <= max_depth:
@@ -458,7 +458,7 @@ class SampleFile:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pddl', nargs='+', required=True, help='Input instances in PDDL files')
+    parser.add_argument('--pddl', nargs='+', help='Input instances in PDDL files')
     parser.add_argument('--symbol', action='store_true', help='Represent states in plain symbols instead of numericaly')
     parser.add_argument('-d', '--depth', default=None, type=int, help='Minimum expansion depth required')
     parser.add_argument('-s', dest='states', type=int, help='Minimum number of states required')
@@ -473,7 +473,7 @@ if __name__ == "__main__":
         instances = [Instance(Problem(p), numbered=not args.symbol) for p in args.pddl]
         sample = Sample(instances=instances)
     else:
-        sample = Sample(load_path=args.load) #TODO fix this
+        sample = Sample.load(args.load) #TODO fix this
     start = time.time()
     sample.expand_states(
         depth=args.depth,
@@ -483,6 +483,7 @@ if __name__ == "__main__":
         complete=args.complete
     )
     print('Time expandind: ', time.time() - start)
+    sample.print_info()
     if args.relevant:
         print(sample.get_relevant())
     sample.store(args.out)

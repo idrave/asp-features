@@ -8,7 +8,7 @@ from features.sample.problem import Problem
 from features.grammar import Grammar
 from features.feat import Features
 from pathlib import Path
-from features.model_util import write_symbols
+from features.model_util import write_symbols, symbol_to_str
 import sys
 from features.selection import solve_T_G, solve_T_G_subprocess
 
@@ -63,7 +63,6 @@ if __name__ == "__main__":
     if not (args.features != None or args.cost != None):
         RuntimeError('At least one of arguments --cost and --features is required')
 
-    logging.basicConfig(level=args.loglevel)
     solver.set_default(args.solver)
     print(args.pddl, args.out)
     out_path = Path(args.out)
@@ -73,10 +72,13 @@ if __name__ == "__main__":
         except (FileNotFoundError, FileExistsError) as e:
             print(repr(e))
             sys.exit()
+    logging.basicConfig(level=args.loglevel,
+                        handlers=[logging.FileHandler(str(out_path/'log.txt')),
+                                    logging.StreamHandler()])
     with open(str(out_path/'info.txt'), 'a') as fp:
         fp.write(str(sys.argv))
     if args.load != None:
-        sample = Sample(load_path=str(Path(args.load)/'sample'))
+        sample = Sample.load(str(Path(args.load)/'sample'))
     else:
         sample = Sample(instances=[Instance(Problem(pddl), numbered=(not args.symbol)) for pddl in args.pddl])
     print(args.depth)
@@ -90,18 +92,20 @@ if __name__ == "__main__":
         goal_req=args.goal, complete=args.complete, optimal=True
     )
     if not args.sat: sample.store(str(out_path/'sample'))
-    grammar = Grammar(sample_v, str(out_path/'concepts'), comp_type=args.compare)
-    if args.load:
-        grammar.load_progress()
-    features = Features(sample_v, grammar, str(out_path), distance=args.dist, load = args.load != None)
+    grammar = Grammar(sample_v)
+    #if args.load:
+    #    grammar.load_progress()
+    features = Features(sample_v, grammar, str(out_path), distance=args.dist)
     if not args.sat:
         while (args.features != None and features.feature_count() < args.features) or \
                 (args.cost != None and features.cost < args.cost):
             features.generate(
-                batch=args.batch, max_f = args.features, max_pre=args.atom, feat_prune=args.comp,
-                max_exp=args.exp, max_conc=args.conc
+                batch=args.batch
             )
-    
+    grammar.store(str(out_path/'grammar'))
+    with open(str(features.out_file), 'w') as fp:
+        for f in features.features:
+            fp.write(symbol_to_str(f.symbols.get_all_atoms()))
     #solution, (time_g, mem_g), (time_s, mem_s) = solve_T_G(sample, features)
     sample_v.print_info()
     print('Total concepts: {}\nTotal features: {}'.format(grammar.total_concepts, features.total_features))
@@ -116,5 +120,5 @@ if __name__ == "__main__":
     print('Solutions found: {}'.format(len(solution)))
     print('Optimal solution: {}. Cost: {}.'.format(*solution[-1] if len(solution) > 0 else (None, None)))
     #print(round(t, 3), round(mem[0]/1e6, 3), round(max(mem)/1e6, 3))
-    
+    print(sample.get_relevant())
     

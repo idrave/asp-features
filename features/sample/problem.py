@@ -36,39 +36,53 @@ import time
 time_eq = 0
 
 class Node:
-    def __init__(self, symbols: SymbolSet, depth: int, parent):
+    def __init__(self, symbols: SymbolSet, depth: int, parent, id=None, encoding=None):
         self._symbols = symbols
-        self._id = None
+        self._id = id
         self._children = []
         self._transitions = []
         self._depth = depth
-        self._parent = parent.id if parent != None else None
+        if parent != None:
+            if isinstance(parent, Node):
+                self._parent = parent.id
+            else:
+                self._parent = parent
+        else:
+            self._parent = None
         self._goal = bool(symbols.count_atoms('goal', 1))
         self._hash = None
         self._sym_hash = {}
         self._calc_hash()
-        self._encoding = None
+        self._encoding = encoding
 
     def store(self):
         info = {
-            'symbols': self._symbols.__dict__,
+            'symbols': self._symbols.to_str(),
             'id': self.id,
             'children': self.children,
             'depth': self.depth,
             'parent': self.parent,
-            'goal': self.goal,
-            'hash': self._hash,
-            'encoding': self._encoding.__dict__
+            'encoding': self._encoding.to_str()
         }
-        #return info
+        return info
 
-    #@staticmethod
-    #def load_state(self, ):
-
+    @staticmethod
+    def load_state(info):
+        def load(symbols, id, children, depth, parent, encoding):
+            node = Node(SymbolSet.from_str(symbols), depth, parent, id=id, encoding=SymbolSet.from_str(encoding))
+            node._children = children
+            for child in node.children:
+                node._transitions.append(clingo.Function('transition', [node.id, child]))
+            return node
+        return load(**info)
 
     @property
     def id(self) -> Optional[int]:
         return self._id
+
+    @property
+    def name(self) -> clingo.Symbol:
+        return clingo.Number(self.id)
 
     @property
     def symbols(self) -> SymbolSet:
@@ -108,7 +122,7 @@ class Node:
         return self._children
 
     def _calc_hash(self):
-        assert(self._hash == None)
+        if self._hash != None: return
         self._hash = 0
         for var, val in self.description:
             self._hash += hash(str(var)+str(val))
@@ -178,7 +192,11 @@ class Problem:
         self.__init_encoding()
     
     def store(self):
-        return {'pddl': self.pddl, 'rules': self.rules}
+        return {'pddl': self.pddl}
+
+    @staticmethod
+    def load(info):
+        return Problem(**info)
 
     def __init_encoding(self):
         def get_null_pred(variables):

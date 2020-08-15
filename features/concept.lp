@@ -17,6 +17,7 @@ role(R)             Expression R represents a role.
 #defined role/2.
 #defined const/1.
 #defined state/1.
+#defined prerole/2.
 
 #program primitive(depth).
 
@@ -66,15 +67,12 @@ belong((X, Y), inv(r_prim(P)), S) :- const(X), const(Y), pred(P), arity(P, 2), s
 
 r_basic(r_prim(P)) :- belong(_, r_prim(P), _).
 r_basic(inv(R)) :- belong(_, inv(R), _).
-role(R, 1) :- r_basic(R).
+prerole(R, 1) :- r_basic(R).
 
 %Transitive roles based on primitives and inverses
 belong(XY, tran(R), S) :- r_basic(R), belong(XY, R, S).
 belong((X, Y), tran(R), S) :- r_basic(R), belong((X, Z), R, S), belong((Z, Y), tran(R), S).
-role(tran(R), 1) :- belong(_, tran(R), _).
-
-#show role(Role, Cost) : role(Role, Cost).
-#show belong(Tuple, Role, State) : belong(Tuple, Role, State), role(Role, _).
+prerole(tran(R), 1) :- belong(_, tran(R), _).
 
 #program equal_role(depth).
 
@@ -116,3 +114,34 @@ keep(exp(C, N)) :- exp(C, N), belong(_, C, _).
 #show exp(C, N) : keep(exp(C, N)).
 #show belong(X, C, S) : keep(exp(C, _)), belong(X, C, S).
 #show cardinality(C, N, S) : keep(exp(C, _)), cardinality(C, N, S).
+
+#program cardinality.
+#defined exp/2.
+
+cardinality(C, N, S) :- exp(C, _), state(S), N = #count{X : belong(X, C, S)}.
+
+#program show_exp.
+1 = {show(C) : exp(C, _), belong(_, C, _)}.
+
+#show exp(C, N) : exp(C, N), show(C).
+#show belong(X, C, S) : belong(X, C, S), show(C).
+#show cardinality(C, N, S) : cardinality(C, N, S), show(C).
+
+#program to_concept(id).
+:- 1 != #count{C: exp(C, _)}.
+#show conceptId(C, id) : exp(C, _).
+#show conc(id, N) : exp(C, N).
+#show belong(X, id, S) : exp(C, _), belong(X, C, S).
+#show cardinality(id, N, S) : exp(C, _), cardinality(C, N, S).
+
+#program show_role.
+1 = {show(R) : prerole(R, _), belong(_, R, _)}.
+
+#show prerole(R, N) : prerole(R, N), show(R).
+#show belong(X, R, S) : belong(X, R, S), show(R).
+
+#program to_role(id).
+:- 1 != #count{C: prerole(C, _)}.
+#show roleId(R, id) : prerole(R, _).
+#show role(id, N) : prerole(R, N).
+#show belong(X, id, S) : prerole(R, _), belong(X, R, S).

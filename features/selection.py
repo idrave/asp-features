@@ -56,7 +56,7 @@ def solve_T_G_subprocess(sample: Sample, features: Features, path):
     sym = sample.get_sample() + sample.get_relevant()
     relevant_file = path+'/sample_relevant.lp'
     write_symbols(sym, relevant_file)
-    cmd = ['clingo', relevant_file, features.features, Logic.t_g]
+    cmd = ['clingo', relevant_file, features.out_file, Logic.t_g]
     parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
     start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)

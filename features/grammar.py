@@ -6,13 +6,15 @@ import pathlib
 import re
 import argparse
 import os
+import json
 from pathlib import Path
-from features.model_util import write_symbols, count_symbols
+from features.model_util import write_symbols, count_symbols, SymbolSet, SymbolHash, symbol_to_str
 from features.logic import Logic
 from features.knowledge import ConceptFile, splitSymbols
 import features.solver as solver
 from features.solver import SolverType
 from features.sample.sample import Sample, SampleFile
+from features.sample.problem import Node
 from comparison import CompareConcept
 from typing import List, Tuple, Union
 from features.prune import Pruneable
@@ -64,182 +66,417 @@ class Concept(Pruneable):
     def show_set(set):
         return ('show_exp_set', [set])
 
+class Constant:
+    def __init__(self, symbol: clingo.Symbol):
+        assert isinstance(symbol, clingo.Symbol) and symbol.match('const', 1)
+        self._symbol = symbol
+
+    @property
+    def name(self):
+        return self._symbol.arguments[0]
+
+    @property
+    def symbol(self):
+        return self._symbol
+
+class StateSet:
+    def __init__(self, symbols: SymbolSet):
+        self._symbols = symbols
+        self._hash = None
+        self._st_hash = {}
+        self._calc_hash()
+
+    @property
+    def symbols(self):
+        return self._symbols
+
+    def belong(self, state: Union[clingo.Symbol, SymbolHash, Node] = None, const: Union[clingo.Symbol, SymbolHash] = None):
+        if state is not None:
+            if isinstance(state, Node):
+                state = state.name
+            if not isinstance(state, clingo.Symbol) and not isinstance(state, SymbolHash):
+                raise TypeError('Unexpected type {}'.format(type(state)))
+            if not isinstance(state, SymbolHash):
+                state = SymbolHash(state)
+        if const is not None:
+            if not isinstance(const, clingo.Symbol) and not isinstance(state, SymbolHash):
+                raise TypeError('Unexpected type {}'.format(type(const)))
+            if not isinstance(const, SymbolHash):
+                const = SymbolHash(const)
+        if state is not None:
+            b_state = self._st_hash.get(state, {})
+            if const is not None:
+                return b_state.get(const, False)
+            else:
+                return b_state
+        if const is not None:
+            return dict([(st, True) for st in self._st_hash if st[const]])   
+        return self._st_hash
+
+    def _calc_hash(self):
+        assert(self._hash == None)
+        self._hash = 0
+        for atom in self.symbols.get_atoms('belong', 3):
+            st = atom.arguments[2]
+            const = atom.arguments[0]
+            self._hash += hash(str(st)+str(const))
+            st = SymbolHash(st)
+            if st not in self._st_hash:
+                self._st_hash[st] = {}
+            self._st_hash[st][SymbolHash(const)] = True
+    
+    def __hash__(self):
+        return self._hash
+
+    def __eq__(self, other):
+        if not isinstance(other, ConceptObj):
+            NotImplemented
+        if hash(self) != hash(other): return False
+        belong = self.belong()
+        if len(belong) != len(other.belong()): return False
+        for st in belong:
+            if len(belong[st]) != len(other.belong(state=st)): return False
+            for c in belong[st]:
+                if not other.belong(state=st, const=c): return False
+        return True
+
+class Expression(StateSet):
+    def __init__(self, symbols: SymbolSet, cost: int):
+        super().__init__(symbols)
+        self._cost = cost
+
+    @property
+    def cost(self):
+        return self._cost
+
+    def belong(self, state: Union[clingo.Symbol, Node] = None, const: Union[clingo.Symbol, Constant] = None):
+        if const is not None:
+            if isinstance(const, Constant):
+                const = const.name
+        return super().belong(state=state, const=const)
+
+    def as_concept(self, id):
+        with solver.create_solver() as ctl:
+            ctl.load(Logic.grammarFile)
+            ctl.addSymbols(self.symbols.get_all_atoms())
+            ctl.ground([Logic.base, ('to_concept', [id])])
+            sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            symbols = SymbolSet(sym[0])
+        return ConceptObj(id, self.cost, symbols)
+
+class ConceptObj(Expression):
+    def __init__(self, id, cost, symbols):
+        super().__init__(symbols, cost)
+        self._id = id
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def concept(self):
+        return self._symbols.get_atoms('conc', 2)
+
+    @property
+    def conceptId(self):
+        return self._symbols.get_atoms('conceptId', 2)
+
+    def store(self):
+        info = {
+            'id': self.id,
+            'cost': self.cost,
+            'symbols': self.symbols.to_str()
+        }
+        return info
+    
+    @staticmethod
+    def load(info):
+        info['symbols'] = SymbolSet.from_str(info['symbols'])
+        return ConceptObj(**info)
+
+class PreRole(StateSet):
+    def __init__(self, symbols: SymbolSet, cost: int):
+        super().__init__(symbols)
+        self._cost = cost
+
+    @property
+    def cost(self):
+        return self._cost
+
+    def belong(self, state: Union[clingo.Symbol, Node] = None, const: Union[clingo.Symbol, Tuple[Constant, Constant]] = None):
+        if const is not None:
+            if isinstance(const, tuple):
+                assert len(const) == 2
+                const = clingo.Function('', [c.name for c in const])
+        return super().belong(state=state, const=const)
+
+    def as_role(self, id):
+        with solver.create_solver() as ctl:
+            ctl.load(Logic.grammarFile)
+            ctl.addSymbols(self.symbols.get_all_atoms())
+            ctl.ground([Logic.base, ('to_role', [id])])
+            sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+            symbols = SymbolSet(sym[0])
+        return Role(id, self.cost, symbols)
+
+class Role(PreRole):
+    def __init__(self, id, cost, symbols):
+        super().__init__(symbols, cost)
+        self._id = id
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def role(self):
+        return self._symbols.get_atoms('role', 2)
+
+    @property
+    def roleId(self):
+        return self._symbols.get_atoms('roleId', 2)
+
+    def store(self):
+        info = {
+            'id': self.id,
+            'cost': self.cost,
+            'symbols': self.symbols.to_str()
+        }
+        return info
+    
+    @staticmethod
+    def load(info):
+        info['symbols'] = SymbolSet.from_str(info['symbols'])
+        return Role(**info)
+
 class Primitive:
     def __init__(self, sample: Union[Sample, SampleFile]):
         self.sample = sample
 
-    def __call__(self):
+    def __call__(self) -> List[Expression]:
         logging.debug('Calling Primitive')
-        with solver.create_solver() as ctl:
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(self.sample.get_sample())
-            ctl.ground([Logic.base, Concept.primitive(1), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        return result
+            ctl.ground([Logic.base, Concept.primitive(1), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+        return [Expression(SymbolSet(model), 1) for model in models]
 
 class Negation:
-    def __init__(self, sample: Union[Sample, SampleFile], primitive: ConceptFile):
+    def __init__(self, sample: Union[Sample, SampleFile], primitive: List[ConceptObj]):
         self.sample = sample
         self.primitive = primitive
-    def __call__(self):
-        logging.debug('Calling Negation({})'.format(self.primitive.name))
-        with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.primitive.file])
+    def __call__(self) -> List[Expression]:
+        logging.debug('Calling Negation({})'.format([c.id for c in self.primitive]))
+        sym = []
+        for c in self.primitive:
+            sym += c.symbols.get_all_atoms()
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+            ctl.load([Logic.grammarFile])
+            ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
-            ctl.ground([Logic.base, Concept.negation(2), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
+            ctl.ground([Logic.base, Concept.negation(2), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
 
-        return result
+        return [Expression(SymbolSet(model), 2) for model in models]
 
 class EqualRole:
-    def __init__(self, sample, roles):
+    def __init__(self, sample, roles: List[Role]):
         self.sample = sample
         self.roles = roles
 
-    def __call__(self):
+    def __call__(self) -> List[Expression]:
         logging.debug('Calling EqualRole')
-        with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.roles])
+        sym = []
+        for r in self.roles:
+            sym += r.symbols.get_all_atoms()
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+            ctl.load([Logic.grammarFile])
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
-            ctl.ground([Logic.base, Concept.equalRole(3), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        return result
+            ctl.addSymbols(sym)
+            ctl.ground([Logic.base, Concept.equalRole(3), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+        return [Expression(SymbolSet(model), 3) for model in models]
 
 class Conjunction:
-    def __init__(self, sample, concept1: ConceptFile, concept2: ConceptFile):
+    def __init__(self, sample, concept1: List[ConceptObj], concept2: List[ConceptObj]):
         self.sample = sample
         self.concept1 = concept1
         self.concept2 = concept2
 
-    def __call__(self):
-        logging.debug('Calling Conjunction({},{})'.format(self.concept1.name, self.concept2.name))
-        with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept1.file, self.concept2.file])
+    def __call__(self) -> List[Expression]:
+        logging.debug('Calling Conjunction({},{})'.format([c.id for c in self.concept1], [c.id for c in self.concept2]))
+        sym = []
+        for c in self.concept1:
+            sym += c.symbols.get_all_atoms()
+        for c in self.concept2:
+            sym += c.symbols.get_all_atoms()
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+            ctl.load([Logic.grammarFile])
+            ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
-            depth = self.concept1.depth + self.concept2.depth + 1
-            ctl.ground([Logic.base, Concept.conjunction(depth, self.concept1.depth, self.concept2.depth), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        return result
+            cost = self.concept1[0].cost + self.concept2[0].cost + 1
+            ctl.ground([Logic.base, Concept.conjunction(cost, self.concept1[0].cost, self.concept2[0].cost), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+        return [Expression(SymbolSet(model), cost) for model in models]
 
 class Uni:
-    def __init__(self, sample, concept: ConceptFile, roles):
+    def __init__(self, sample, concept: List[ConceptObj], roles):
         self.sample = sample
         self.concept = concept
         self.roles = roles
 
-    def __call__(self):
-        logging.debug('Calling Uni({})'.format(self.concept.name))
-        with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept.file, self.roles])
+    def __call__(self) -> List[Expression]:
+        logging.debug('Calling Uni({})'.format([c.id for c in self.concept]))
+        sym = []
+        for c in self.concept:
+            sym += c.symbols.get_all_atoms()
+        for r in self.roles:
+            sym += r.symbols.get_all_atoms()
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+            ctl.load([Logic.grammarFile])
+            ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
-            depth = self.concept.depth + 2
-            ctl.ground([Logic.base, Concept.uni(depth), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        return result
+            cost = self.concept[0].cost + 2
+            ctl.ground([Logic.base, Concept.uni(cost), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+        return [Expression(SymbolSet(model), cost) for model in models]
 
 class Exi:
-    def __init__(self, sample, concept: ConceptFile, roles):
+    def __init__(self, sample, concept: List[ConceptObj], roles: List[Role]):
         self.sample = sample
         self.concept = concept
         self.roles = roles
-    def __call__(self):
-        logging.debug('Calling Exi({})'.format(self.concept.name))
-        with solver.create_solver() as ctl:
-            ctl.load([Logic.grammarFile, self.concept.file, self.roles])
+    def __call__(self) -> List[Expression]:
+        logging.debug('Calling Exi({})'.format([c.id for c in self.concept]))
+        sym = []
+        for c in self.concept:
+            sym += c.symbols.get_all_atoms()
+        for r in self.roles:
+            sym += r.symbols.get_all_atoms()
+        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+            ctl.load([Logic.grammarFile])
+            ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
-            depth = self.concept.depth + 2
-            ctl.ground([Logic.base, Concept.exi(depth), Concept.keepExp])
-            result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        return result
+            cost = self.concept[0].cost + 2
+            ctl.ground([Logic.base, Concept.exi(cost), ('cardinality', []), ('show_exp', [])])
+            models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+        return [Expression(SymbolSet(model), cost) for model in models]
 
 def roles(sample):
-    with solver.create_solver() as ctl:
+    with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
         ctl.load([Logic.grammarFile])
         ctl.addSymbols(sample.get_sample())
-        ctl.ground([Logic.base, Logic.roles, Logic.keepRoles])
-        result = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-    return result
+        ctl.ground([Logic.base, Logic.roles])
+        ctl.solve()
+        ctl.ground([('show_role', [])])
+        models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
+    return [PreRole(SymbolSet(model), 1) for model in models]
 
 class Grammar:
-    def __init__(self, sample: Union[Sample, SampleFile], path, comp_type=CompareConcept.STANDARD):
+    def __init__(self, sample: Sample):
         self.sample = sample
-        self.path = Path(path)
         self.concepts = {}
         self.conceptNum = {}
-        self.compare = CompareConcept(comp_type=comp_type)
+        self._conc_set = {}
+        self._role_set = {}
         self.cost = 0
-        self.roles = None
+        self._roles = None
         self.total_concepts = 0
-        self.createDir()
+        self._last_role = -1
+        self._last_conc = -1
+
+    @staticmethod
+    def load(sample, path):
+        grammar = Grammar(sample)
+        path = Path(path)
+        with open(str(path/'grammar.json'), 'r') as fp:
+            info = json.load(fp)
+        def load(cost, roles, concepts):
+            grammar.cost = cost
+            for r in roles:
+                role = Role.load(r)
+                grammar.add_role(role)
+            for c in concepts:
+                conc = ConceptObj.load(c)
+                grammar.add_concept(conc)
+        load(**info)
+        return grammar
     
-    def createDir(self):
-        print(self.path.absolute())
-        if not self.path.is_dir():
+    def store(self, path):
+        path = Path(path)
+        if not path.is_dir():
             try:
-                self.path.mkdir()
+                path.mkdir()
             except (FileNotFoundError, FileExistsError) as e:
                 print(repr(e))
                 sys.exit()
+        info = {
+            'cost' : self.cost,
+            'roles' : [r.store() for r in self.get_roles()] if self.get_roles() != None else None,
+            'concepts' : [c.store() for c in self.get_concepts()]
+        }
+        with open(str(path/'grammar.json'), 'w') as fp:
+            json.dump(info, fp)
+        with open(str(path/'concepts.lp'), 'w') as fp:
+            for c in self.get_concepts():
+                fp.write(symbol_to_str(c.symbols.get_all_atoms()))
+        with open(str(path/'roles.lp'), 'w') as fp:
+            for r in self.get_roles():
+                fp.write(symbol_to_str(r.symbols.get_all_atoms()))
 
-    def load_progress(self, depth=None):
-        if depth != None and depth < 1: return
-        directory = os.listdir(self.path)
-        self.roles = str(self.path/'roles.lp')
-        for elem in directory:
-            match = re.match(r'depth_(\d*)_(\d*)', elem)
-            if match:
-                dep = int(match.group(1))
-                if depth == None or dep <= depth:
-                    logging.debug('Found file: {}'.format(match.group(0)))
-                    if dep not in self.concepts:
-                        self.concepts[dep] = []
-                        self.conceptNum[dep] = 0
-                    filename =  str(self.path/elem)
-                    self.conceptNum[dep] += countFile(filename)
-                    self.concepts[dep].append(ConceptFile(match.group(0), filename, dep))
-        self.total_concepts = 0
-        for depth in self.concepts:
-            self.cost = max(self.cost, depth)
-            self.total_concepts += self.conceptNum[depth]
-            self.concepts[depth].sort(key=lambda x: x.name)
-    
     def add_roles(self):
-        symbols = roles(self.sample)
-        with solver.create_solver() as ctl:
-            ctl.load(Logic.pruneFile)
-            ctl.addSymbols(symbols)
-            ctl.ground([Logic.base, Logic.index_role(0)])
-            symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-        self.roles = str(self.path/'roles.lp')
-        write_symbols(symbols, self.roles)
-        del symbols[:]
+        preroles = roles(self.sample)
+        if self.get_roles() == None:
+            self._roles = []
+        self._role_set = {}
+        for r in preroles:
+            if r not in self._role_set:
+                nr = r.as_role(self._last_role+1)
+                self.add_role(nr)
 
-    def __concepts_depth(self, depth):
+    def add_role(self, role: Role):
+        logging.debug('Adding role {}'.format(role.roleId))
+        if self.get_roles() == None:
+            self._roles = []
+        self._roles.append(role)
+        self._role_set[role] = True
+        self._last_role = max(self._last_role, role.id)
+
+    def get_roles(self):
+        return self._roles
+
+    def batch_cost(self, cost, batch):
+        for i in range(0, len(self.concepts[cost]), batch):
+            yield self.concepts[cost][i:i+batch]
+
+    def _concepts_depth(self, depth, batch=1):
+        variables = []
         if depth == 1:
             return [Primitive(self.sample)]
         elif depth == 2:
-            return [Negation(self.sample, prim) for prim in self.concepts[1]]
+            for conc in self.batch_cost(depth-1, batch):
+                variables.append(Negation(self.sample, conc))
+            return variables
         else:
-            variables = []
             if depth == 3:
-                variables.append(EqualRole(self.sample, self.roles))
+                variables.append(EqualRole(self.sample, self.get_roles()))
             
             for i in range(1, (depth + 1)//2):
-                for conc1 in self.concepts[i]:
-                    for conc2 in self.concepts[depth - i - 1]:
+                for conc1 in self.batch_cost(i, batch):
+                    for conc2 in self.batch_cost(depth - i - 1, batch):
                         variables.append(Conjunction(self.sample, conc1, conc2))
-            for conc in self.concepts[depth - 2]:
-                variables.append(Uni(self.sample, conc, self.roles))
-                variables.append(Exi(self.sample, conc, self.roles))
+            for conc in self.batch_cost(depth - 2, batch):
+                variables.append(Uni(self.sample, conc, self.get_roles()))
+                variables.append(Exi(self.sample, conc, self.get_roles()))
             return variables
 
-    def get_concepts(self):
+    def get_concepts(self) -> List[ConceptObj]:
         depths = list(self.concepts.keys())
         depths.sort()
         concepts = []
         for d in depths:
-            for conc in self.concepts[d]:
-                concepts.append(conc)
+            concepts += self.concepts[d]
         return concepts
 
     def conceptIterator(self):
@@ -263,62 +500,39 @@ class Grammar:
         if len(l):
             yield l
 
-    def prune(self, expressions, max_exp, max_conc):
-        concept_files = [conc.file for conc in self.get_concepts()]
-        return Concept.prune_symbols(
-                    expressions, concept_files, self.compare,
-                    max_atoms=max_exp, max_comp=max_conc
-                )
-
-    def addConcepts(self, depth, symbols, max_size=50):
-        startSize = (max_size - (self.conceptNum[depth] % max_size)) % max_size
-        logging.debug('Start size {}'.format(startSize))
-        concept_n, groups = splitSymbols(
-            symbols,
-            self.total_concepts,
-            startSize,
-            Concept.numberConc,
-            Concept.classify,
-            max_conc=max_size)
-        
-        logging.info('{} concepts.'.format(concept_n))
-        for i, group in enumerate(groups):
-            if i == 0:
-                if startSize > 0:
-                    write_symbols(group, self.concepts[depth][-1].file, type_='a')
-                    logging.debug('Appending to existing file')
-            else:
-                name = 'depth_{}_{}'.format(depth, len(self.concepts[depth]))
-                newset = ConceptFile(name, str(self.path/'{}.lp'.format(name)), depth)
-                self.concepts[depth].append(newset)
-                write_symbols(group, newset.file)
-                logging.debug('Created new file {}'.format(newset.file))
-                del group[:]
-        self.conceptNum[depth] += concept_n
-        self.total_concepts += concept_n
-
-    def expand_grammar(self, max_depth, max_exp=400, max_conc=250):
+    def expand_grammar(self, max_depth, batch=1):
         logging.debug("Starting {}. Ending {}".format(self.cost, max_depth))
         
-        if self.roles is None: self.add_roles()
+        if self.get_roles() is None: self.add_roles()
         
         for depth in range(self.cost+1, max_depth+1):
             print('Depth {}:'.format(depth))
             self.concepts[depth] = []
             self.conceptNum[depth] = 0
-            expressions = self.__concepts_depth(depth)
+            expressions = self._concepts_depth(depth, batch=batch)
             logging.debug('Number of concept groups: {}'.format(len(expressions)))
-            for exp in expressions:
-                symbols = exp()
-                logging.debug('Expressions {}'.format(count_symbols(symbols, 'exp', 2)))
-                symbols = self.prune(symbols, max_exp=max_exp, max_conc=max_conc)
-                self.addConcepts(depth, symbols, max_size=max_conc)
-                del symbols[:]
-                    
+            for i, exp in enumerate(expressions):
+                if (i+1)%5==0 or i+1==len(expressions):
+                    print('Concepts {}/{}'.format(i+1, len(expressions)))
+                new_concepts = exp()
+                for conc in new_concepts:
+                    if conc not in self._conc_set:
+                        nconc = conc.as_concept(self._last_conc+1)
+                        self.add_concept(nconc)
             print("Total {}: {} concepts.\n".format(depth, self.conceptNum[depth]))
-            
         self.cost = max_depth
-        self.joinOutput(self.path/'concept_summary.lp')
+
+    def add_concept(self, concept: ConceptObj):
+        logging.debug('Adding {} of cost {}'.format(concept.conceptId, concept.cost))
+        if concept.cost not in self.concepts:
+            self.concepts[concept.cost] = []
+        self.concepts[concept.cost].append(concept)
+        if concept.cost not in self.conceptNum:
+            self.conceptNum[concept.cost] = 0
+        self.conceptNum[concept.cost] += 1
+        self.total_concepts += 1
+        self._conc_set[concept] = True
+        self._last_conc = max(self._last_conc, concept.id)
 
     def get_cost(self, cost):
         if cost > self.cost or cost <= 0:
@@ -327,12 +541,6 @@ class Grammar:
 
     def is_generated(self, cost):
         return cost in self.concepts
-
-    def joinOutput(self, out_file):
-        with open(str(out_file), 'w') as outfile:
-            for conc in self.conceptIterator():
-                with open(conc.file) as infile:
-                    outfile.write(infile.read())
 
 def countFile(file_name):
     count = 0
@@ -348,17 +556,8 @@ if __name__ == "__main__":
     parser.add_argument('sample', type=str, help='Sample file path')
     parser.add_argument('out_dir', type=str, help='Output directory')
     parser.add_argument('max_depth', type=int, help='Maximum concept depth')
-    parser.add_argument('-s', '--start',action='store',default=1, type=int, help='Starting depth')
-    parser.add_argument('--exp',default=50, type=int, help='Max number of expressions in prunning set')
-    parser.add_argument('--conc',default=50, type=int, help='Max number of concepts in file')
-    
-    group_compare = parser.add_mutually_exclusive_group(required = False)
-    group_compare.add_argument('--fast', action='store_const', dest='compare', help='Prunning with cardinality',
-        const=CompareConcept.FAST, default=CompareConcept.STANDARD)
-    group_compare.add_argument('--std', action='store_const', dest='compare', help='Standard sound prunning',
-        const=CompareConcept.STANDARD)
-    group_compare.add_argument('--mix', action='store_const', dest='compare', help='Cardinality + standard prunning',
-        const=CompareConcept.MIXED)
+    parser.add_argument('-load', help='Path to existing concepts')
+    parser.add_argument('-batch', type=int, default=1, help='Max batch size used for generating concepts')
     
     parser.add_argument('-d', '--debug',help="Print debugging statements",
         action="store_const", dest="loglevel", const=logging.DEBUG, default=logging.WARNING)
@@ -368,14 +567,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
 
-    print(args.compare)
     solver.set_default(args.solver)
     print(args.solver)
-    grammar = Grammar(SampleFile(args.sample),args.out_dir, comp_type=args.compare)
+    sample = Sample.load(args.sample)
+    if args.load != None:
+        grammar = Grammar.load(sample, args.load)
+    else:
+        grammar = Grammar(sample)
     import time
     start = time.time()
     print(Logic.logicPath, Logic.grammarFile)
-    grammar.load_progress(args.start-1)
-    grammar.expand_grammar(args.max_depth, max_exp=args.exp, max_conc=args.conc)
+    grammar.expand_grammar(args.max_depth, batch=args.batch)
     print('Total number of concepts: {}'.format(grammar.total_concepts))
     print("Took {}s.".format(round(time.time()-start, 2)))
+    grammar.store(args.out_dir)
