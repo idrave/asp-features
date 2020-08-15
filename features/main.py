@@ -1,4 +1,5 @@
 import argparse
+import multiprocessing
 from features.comparison import CompareConcept
 import logging
 from features.solver import SolverType
@@ -63,7 +64,9 @@ if __name__ == "__main__":
     if not (args.features != None or args.cost != None):
         RuntimeError('At least one of arguments --cost and --features is required')
 
+    multiprocessing.set_start_method('spawn')
     solver.set_default(args.solver)
+    
     print(args.pddl, args.out)
     out_path = Path(args.out)
     if not out_path.is_dir():

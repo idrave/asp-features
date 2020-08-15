@@ -171,6 +171,38 @@ class ClingoOps(Enum):
         if op == ClingoOps.EXTERNAL: return ctl.getExternals
         raise ValueError('{} is not a valid ClingoOps'.format(op))
 
+class ClingoChild(Process):
+    def __init__(self, args, pipe):
+        self._args = args
+        self._pipe = pipe
+
+    def run(self):
+        with ClingoSolver(self._args) as ctl:
+            while True:
+                op, args, kwargs = self._child_recv()
+                if op == ClingoOps.END:
+                    self._pipe.close()
+                    break
+                func = ClingoOps.get_op(op, ctl)
+                result = func(*args, **kwargs)
+                self._child_send(op, result)
+                             
+    def _child_send(self, op, values):
+        if op in [ClingoOps.GET, ClingoOps.EXTERNAL]:
+            values = list(map(symbol_pickle, values))
+        elif op == ClingoOps.SOLVE and values is not None:
+            values = list(map(lambda x: list(map(symbol_pickle, x)), values))
+        self._pipe.send(values)
+
+    def _child_recv(self):
+        op, args, kwargs = self._pipe.recv()
+        if op == ClingoOps.ADDSYM:
+            args[0] = list(map(lambda x: x.to_symbol(), args[0]))
+        elif op == ClingoOps.RESET:
+            kwargs['start_symbols'] = list(map(lambda x: x.to_symbol(), kwargs['start_symbols']))
+        elif op == ClingoOps.ASSIGN:
+            args[0] = args[0].to_symbol()
+        return op, args, kwargs
 
 class ClingoProcess:
     
@@ -178,14 +210,13 @@ class ClingoProcess:
         self.args = ctlkwargs
         
     def open(self):
-        self.parent_conn, self.child_conn = Pipe(duplex=True)
-        self.process = Process(target=self._start, args=(self.args,))
+        self._pipe, child_conn = Pipe(duplex=True)
+        self.process = ClingoChild(self.args, child_conn)
         self.process.start()
-        self.child_conn.close()
 
     def close(self):
-        self.parent_conn.send((ClingoOps.END, [], {}))
-        self.parent_conn.close()
+        self._pipe.send((ClingoOps.END, [], {}))
+        self._pipe.close()
         self.process.join()
 
     def __enter__(self):
@@ -197,46 +228,15 @@ class ClingoProcess:
             print(type, value, traceback)
         self.close()        
 
-    def _start(self, kwargs):
-        self.parent_conn.close()
-        with ClingoSolver(kwargs) as ctl:
-            while True:
-                op, args, kwargs = self._child_recv()
-                if op == ClingoOps.END:
-                    self.child_conn.close()
-                    break
-                func = ClingoOps.get_op(op, ctl)
-                result = func(*args, **kwargs)
-                self._child_send(op, result)
-                             
-    def _child_send(self, op, values):
-        if op in [ClingoOps.GET, ClingoOps.EXTERNAL]:
-            values = list(map(symbol_pickle, values))
-        elif op == ClingoOps.SOLVE and values is not None:
-            values = list(map(lambda x: list(map(symbol_pickle, x)), values))
-        self.child_conn.send(values)
-
-    def _child_recv(self):
-        op, args, kwargs = self.child_conn.recv()
-        if op == ClingoOps.ADDSYM:
-            args[0] = list(map(lambda x: x.to_symbol(), args[0]))
-        elif op == ClingoOps.RESET:
-            kwargs['start_symbols'] = list(map(lambda x: x.to_symbol(), kwargs['start_symbols']))
-        elif op == ClingoOps.ASSIGN:
-            args[0] = args[0].to_symbol()
-        return op, args, kwargs
-
     def _parent_send(self, op, args, kwargs):
         if op == ClingoOps.ADDSYM:
             args[0] = list(map(symbol_pickle, args[0]))
-        elif op == ClingoOps.RESET:
-            kwargs['start_symbols'] = list(map(symbol_pickle, kwargs['start_symbols']))
         elif op == ClingoOps.ASSIGN:
             args[0] = symbol_pickle(args[0])
-        self.parent_conn.send((op, args, kwargs))
+        self._pipe.send((op, args, kwargs))
 
     def _parent_recv(self, op):
-        values = self.parent_conn.recv()
+        values = self._pipe.recv()
         if op in [ClingoOps.GET, ClingoOps.EXTERNAL]:
             values = list(map(lambda s: s.to_symbol(), values))
         elif op == ClingoOps.SOLVE and values is not None:
@@ -301,7 +301,7 @@ class ClingoProfiling(ClingoProcess):
         start = time.time()
         SLEEP_TIME=.001
         self._parent_send(ClingoOps.GROUND, [programs], {})
-        while not self.parent_conn.poll():
+        while not self._pipe.poll():
             self._mem.append(proc.memory_info().rss)
             time.sleep(SLEEP_TIME)
         self._time = time.time() - start
@@ -313,7 +313,7 @@ class ClingoProfiling(ClingoProcess):
         start = time.time()
         SLEEP_TIME=.01
         self._parent_send(ClingoOps.SOLVE, [], dict(solvekwargs=solvekwargs, symbolkwargs=symbolkwargs))
-        while not self.parent_conn.poll():
+        while not self._pipe.poll():
             self._mem.append(proc.memory_info().rss)
             time.sleep(SLEEP_TIME)
         self._time = time.time() - start
