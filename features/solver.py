@@ -173,6 +173,7 @@ class ClingoOps(Enum):
 
 class ClingoChild(Process):
     def __init__(self, args, pipe):
+        super().__init__()
         self._args = args
         self._pipe = pipe
 
