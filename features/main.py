@@ -100,7 +100,12 @@ if __name__ == "__main__":
         grammar = Grammar(sample_v)
     else:
         grammar = Grammar.load(sample_v, str(Path(args.load)/'grammar'))
-    features = Features(sample_v, grammar, str(out_path), distance=args.dist)
+    if args.load == None:
+        features = Features(sample_v, grammar, distance=args.dist)
+    else:
+        features = Features.load(sample_v, grammar, str(Path(args.load)/'features'))
+
+    print(type(features))
     if not args.sat:
         while (args.features != None and features.feature_count() < args.features) or \
                 (args.cost != None and features.cost < args.cost):
@@ -108,8 +113,9 @@ if __name__ == "__main__":
                 batch=args.batch
             )
     grammar.store(str(out_path/'grammar'))
-    with open(str(features.out_file), 'w') as fp:
-        for f in features.features:
+    features.store(str(out_path/'features'))
+    with open(str(out_path/'features.lp'), 'w') as fp:
+        for f in features.get_features(num=args.features):
             fp.write(symbol_to_str(f.symbols.get_all_atoms()))
     #solution, (time_g, mem_g), (time_s, mem_s) = solve_T_G(sample, features)
     sample_v.print_info()
@@ -117,7 +123,7 @@ if __name__ == "__main__":
     
     #print('Grounding took {}s, min memory {} MB, max memory {} MB'.format(round(time_g, 3), round(min(mem_g)/1e6, 3), round(max(mem_g)/1e6, 3)))
     #logging.debug('Profiling samples: {}'.format(len(mem_s)))
-    solution, t, mem = solve_T_G_subprocess(sample_v, features, args.out)
+    solution, t, mem = solve_T_G_subprocess(sample_v, args.out)
     logging.debug('Profiling samples: {}'.format(len(mem)))
     logging.debug('Relevant: {}'.format(sample_v.get_relevant()))
     #print('Solving took {}s, min memory {} MB, max memory {} MB'.format(round(time_s, 3), round(min(mem_s)/1e6, 3), round(max(mem_s)/1e6, 3)))
@@ -125,5 +131,5 @@ if __name__ == "__main__":
     print('Solutions found: {}'.format(len(solution)))
     print('Optimal solution: {}. Cost: {}.'.format(*solution[-1] if len(solution) > 0 else (None, None)))
     #print(round(t, 3), round(mem[0]/1e6, 3), round(max(mem)/1e6, 3))
-    print(sample.get_relevant())
+    print(sample_v.get_relevant())
     

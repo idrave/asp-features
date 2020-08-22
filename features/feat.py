@@ -47,39 +47,22 @@ class Feature(Pruneable):
         return ('show_features', [set])
 
 
-class FeatureObj:
+class PreFeature:
     def __init__(self, symbols: SymbolSet):
         self._symbols = symbols
-        self._id = None
         self._hash = None
         self._val_hash = {}
         self._del_hash = {}
         self._calc_hash()
 
-    @property
-    def id(self):
-        return self._id
-
-    @property
-    def is_feature(self):
-        return self.id != None
-
     def to_feature(self, id):
-        self._id = id
         with solver.create_solver() as ctl:
             ctl.load(Logic.featureFile)
             ctl.addSymbols(self._symbols.get_all_atoms())
             ctl.ground([Logic.base, ('to_feature', [id])])
             sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]
-            self._symbols = SymbolSet(sym)
-
-    @property
-    def feature(self):
-        return self.symbols.get_atoms('feature', 1)
-
-    @property
-    def featureId(self):
-        return self.symbols.get_atoms('featureId', 2)
+            symbols = SymbolSet(sym)
+        return FeatureObj(id, symbols)
 
     @property
     def symbols(self) -> SymbolSet:
@@ -115,8 +98,8 @@ class FeatureObj:
         return self._hash
 
     def __eq__(self, other):
-        if not isinstance(other, Feature):
-            NotImplemented
+        if not isinstance(other, PreFeature):
+            raise NotImplementedError
         if hash(self) != hash(other):
             return False
         value = self.value
@@ -132,6 +115,37 @@ class FeatureObj:
         return True
 
 
+class FeatureObj(PreFeature):
+
+    def __init__(self, id, symbols):
+        super().__init__(symbols)
+        self._id = id
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def feature(self):
+        return self.symbols.get_atoms('feature', 1)
+
+    @property
+    def featureId(self):
+        return self.symbols.get_atoms('featureId', 2)
+
+    def to_json(self):
+        data = {
+            'id': self.id,
+            'symbols': self.symbols.to_pickle()
+        }
+        return data
+
+    @staticmethod
+    def from_json(jsondict):
+        def load(id, symbols):
+            return FeatureObj(id, SymbolSet.from_pickle(symbols))
+        return load(**jsondict)
+
 class Nullary:
     def __init__(self, sample: Union[Sample, SampleFile]):
         self.sample = sample
@@ -143,7 +157,7 @@ class Nullary:
             ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Feature.primitiveFeature, Feature.processFeat])
             models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-        return [FeatureObj(SymbolSet(model)) for model in models]
+        return [PreFeature(SymbolSet(model)) for model in models]
 
 class ConceptFeat:
     def __init__(self, sample: Union[Sample, SampleFile], concepts: List[ConceptObj]):
@@ -164,7 +178,7 @@ class ConceptFeat:
             #ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Feature.conceptFeature, Feature.processFeat])
             models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
-        return [FeatureObj(SymbolSet(model)) for model in models]
+        return [PreFeature(SymbolSet(model)) for model in models]
 
 class Distance:
     def __init__(self, sample: Sample, conc1: List[ConceptObj], roles, conc:List[ConceptObj], conc2:List[ConceptObj], max_cost=8):
@@ -212,54 +226,22 @@ class Distance:
             ctl.ground([('value_dist', []), Feature.processFeat])
             models = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
             logging.debug('Found {} features'.format(len(models)))
-        return [FeatureObj(SymbolSet(model)) for model in models]
+        return [PreFeature(SymbolSet(model)) for model in models]
 
 class Features:
-    def __init__(self, sample: Union[Sample, SampleFile], grammar, output, distance=False):
+    def __init__(self, sample: Union[Sample, SampleFile], grammar, distance=False):
         self.sample = sample
         self.concepts = grammar
-        self.output = output
         self.features = []
-        path = Path(output)
-        self.path = path
-        self.out_file = str(path / 'features.lp')
-        self.info = str(path / 'features.json')
-        self.left = []
         self._feat_set = {}
-        if not path.is_dir():
-            path.mkdir()
         self.cost = 0
         self.total_features = 0
-        self.__distance = distance
-        '''
-        if load:
-            self.load_info()
-            if self.__distance != distance:
-                raise ValueError('Invalid distance argument {}. Loaded features have distance {}'.format(distance, self.__distance))
-        else:
-            with open(self.features, 'w'): pass
-            self.total_features = 0
-            self.cost = 0
-            self.__comp_type = CompareFeature.STANDARD
-            self.compare = CompareFeature(comp_type=self.__comp_type)
-            self.__distance = distance'''
+        self._distance = distance
 
-    def prune(self, features, max_pre, max_feat):
-        return Feature.prune_symbols(
-                    features, self.features, self.compare,
-                    max_atoms=max_pre, max_comp=max_feat
-                )
-
-    def addFeatures(self, symbols):
-        feat_n, symbols = number_symbols(
-            symbols,
-            self.total_features,
-            Feature.numberFeat
-        )
-        logging.info('{} features.'.format(feat_n))
-        write_symbols(symbols, self.features, type_='a')
-        del symbols[:]
-        self.total_features += feat_n
+    def get_features(self, num=None) -> List[FeatureObj]:
+        num = num if num != None else self.feature_count()
+        print(num)
+        return self.features[0:num]
 
     def feature_count(self):
         return self.total_features
@@ -268,8 +250,7 @@ class Features:
         max_cost = self.cost+1 if max_cost is None else max_cost
         print('Features with max cost {}'.format(max_cost))
 
-        features = self.left
-        self.left = []
+        features = []
         if self.cost == 0 and max_cost > 0:
             features.append(Nullary(self.sample))
 
@@ -280,7 +261,7 @@ class Features:
             conc += self.concepts.get_cost(i)
         for i in range(0,len(conc),batch):
             features.append(ConceptFeat(self.sample, conc[i:i+batch]))
-        if self.__distance:
+        if self._distance:
             for cost in range(self.cost+1, max_cost+1):
                 for i in range(1, cost-2):
                     for j in range(1, cost-1-i):
@@ -296,46 +277,61 @@ class Features:
         for i, feat in enumerate(features):
             if (i+1)%10==0 or i == len(features)-1:
                 print('Features {}/{}'.format(i+1, len(features)))
-            if max_f == None or self.total_features < max_f:
-                fs = feat()
-                #logging.debug('Initial features: {}'.format(len(fs)))
-                #logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
-                #logging.debug('Initial num: {}'.format(count_symbols(symbols, 'num', 1)))
-                for f in fs:
-                    if f not in self._feat_set:
-                        self.add_feature(f)
-            else:
-                self.left.append(feat)
-        print('Generated {} features'.format(self.total_features))
-        logging.debug('Left: {}'.format(len(self.left)))
-        self.cost = max_cost
-        #self.update_info()
+            fs = feat()
+            #logging.debug('Initial features: {}'.format(len(fs)))
+            #logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
+            #logging.debug('Initial num: {}'.format(count_symbols(symbols, 'num', 1)))
+            for f in fs:
+                if f not in self._feat_set:
+                    self.add_feature(f.to_feature(self.total_features))
 
-    def add_feature(self, feat: FeatureObj):
-        feat.to_feature(self.total_features)
+        print('Generated {} features'.format(self.total_features))
+        self.cost = max_cost
+
+    def add_feature(self, feat: PreFeature):
         logging.debug('Adding {}'.format(feat.featureId))
         self.features.append(feat)
         self.total_features += 1
         self._feat_set[feat] = True
 
-    def update_info(self):
-        data = {
-            'total_features': self.total_features,
-            'cost': self.cost,
-            'compare': self.__comp_type,
-            'distance': self.__distance
-        }
-        with open(self.info, 'w') as fp:
-            json.dump(data, fp)
+    def store(self, path):
+        path = Path(path)
+        if not path.is_dir():
+            try:
+                path.mkdir()
+            except (FileNotFoundError, FileExistsError) as e:
+                print(repr(e))
+                sys.exit()
+        with open(str(path/'features.json'), 'w') as fp:
+            json.dump(self.to_json(), fp)
+        with open(str(path/'features.lp'), 'w') as fp:
+            for f in self.features:
+                fp.write(symbol_to_str(f.symbols.get_all_atoms()))
 
-    def load_info(self):
-        with open(self.info, 'r') as fp:
-            data = json.load(fp)
-        self.total_features = data['total_features']
-        self.cost = data['cost']
-        self.__comp_type = data['compare']
-        self.compare = CompareFeature(comp_type=self.__comp_type)
-        self.__distance = data['distance']
+    @staticmethod
+    def load(sample, grammar, path):
+        with open(str(Path(path)/'features.json'), 'r') as fp:
+            return Features.from_json(sample, grammar, json.load(fp))
+
+    def to_json(self):
+        data = {
+            'features': [f.to_json() for f in self.features],
+            'cost': self.cost,
+            '_distance': self._distance
+        }
+        return data
+
+    @staticmethod
+    def from_json(sample, grammar, jsondict):
+        def load(features, cost, _distance):
+            feat = Features(sample, grammar, _distance)
+            feat.cost = cost
+            for f in features:
+                feat.add_feature(FeatureObj.from_json(f))
+            return feat
+        return load(**jsondict)
+
+
 import time
 
 if __name__ == "__main__":
@@ -357,13 +353,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
     sample = Sample.load(args.sample)
-    grammar = Grammar(sample, args.concepts)
+    grammar = Grammar(sample)
     grammar.expand_grammar(args.max_cost, batch=args.batch)
     #grammar.load_progress(args.max_cost)
-    features = Features(sample, grammar, args.out_dir, distance=args.dist)
+    features = Features(sample, grammar, distance=args.dist)
     start = time.time()
     features.generate(max_cost=args.max_cost, batch=args.batch)
     print('Took {}s'.format(time.time() - start))
-    with open(str(Path(features.output)/'features.lp'), 'w') as fp:
-        for f in features.features:
-            fp.write(symbol_to_str(f.symbols.get_all_atoms()))
+    features.store(args.out_dir)

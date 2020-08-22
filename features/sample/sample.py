@@ -33,7 +33,6 @@ class Instance:
         self._states = [] #States by depth
         self._st_set = {} #States by hash
         self._next_id = 0
-        #self.__init_encoding()
         self._state_n = 0      #Number of states
         self._transition_n = 0 #Number of transitions
         
@@ -161,6 +160,13 @@ class Instance:
                 states += st.state
         return states
 
+    def get_state(self, id) -> Optional[Node]:
+        return self._st_id.get(id, None)
+
+    def get_initial_state(self):
+        if self.depth == None or self.depth < 0: return None
+        return self._states[0]
+
     @property
     def transitions(self):
         if self.depth == None: return []
@@ -249,6 +255,7 @@ class Sample:
                     s_n += instance.count_states()
                     t_n += instance.count_transitions()
                 print('States {}. Transitions {}.'.format(s_n, t_n))
+            stop = stop or self.is_complete
 
         self.depth = d
         self.state_count = s_n
@@ -341,7 +348,6 @@ class Sample:
             goal_req=goal_req, complete=complete
         )
         if complete: return SampleView(self, optimal=optimal)
-        #TODO fix sum
         depth = depth if depth != None else 0
         s_n = 0
         t_n = 0
@@ -373,7 +379,6 @@ class Sample:
 class SampleView:
 
     def __init__(self, sample: Sample, max_depth=None, optimal=False):
-        print('Generating SAMPLE AAAAAAAAAAAAAAAAAAa', optimal)
         max_depth = max_depth if max_depth != None else sample.depth
         inst = sample.get_instances()
         sym = []

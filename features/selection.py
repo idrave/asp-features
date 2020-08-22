@@ -10,6 +10,7 @@ import time
 import multiprocessing
 import clingo
 import re
+from pathlib import Path
 
 def solve_T_G(sample: Sample, features: Features):
     with solver.create_solver(type_= SolverType.PROFILE) as ctl:
@@ -52,11 +53,11 @@ def parse_clingo(output):
     return result
 
 
-def solve_T_G_subprocess(sample: Sample, features: Features, path):
+def solve_T_G_subprocess(sample: Sample, path):
     sym = sample.get_sample() + sample.get_relevant()
     relevant_file = path+'/sample_relevant.lp'
     write_symbols(sym, relevant_file)
-    cmd = ['clingo', relevant_file, features.out_file, Logic.t_g]
+    cmd = ['clingo', relevant_file, str(Path(path)/'features.lp'), Logic.t_g]
     parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
     start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
