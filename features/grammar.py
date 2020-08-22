@@ -185,13 +185,13 @@ class ConceptObj(Expression):
         info = {
             'id': self.id,
             'cost': self.cost,
-            'symbols': self.symbols.to_str()
+            'symbols': self.symbols.to_pickle()
         }
         return info
     
     @staticmethod
     def load(info):
-        info['symbols'] = SymbolSet.from_str(info['symbols'])
+        info['symbols'] = SymbolSet.from_pickle(info['symbols'])
         return ConceptObj(**info)
 
 class PreRole(StateSet):
@@ -240,13 +240,13 @@ class Role(PreRole):
         info = {
             'id': self.id,
             'cost': self.cost,
-            'symbols': self.symbols.to_str()
+            'symbols': self.symbols.to_pickle()
         }
         return info
     
     @staticmethod
     def load(info):
-        info['symbols'] = SymbolSet.from_str(info['symbols'])
+        info['symbols'] = SymbolSet.from_pickle(info['symbols'])
         return Role(**info)
 
 class Primitive:

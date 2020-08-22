@@ -21,14 +21,14 @@ holds(Variable, Value, initialState) :- initialState(Variable, Value).
 
 #program successor.
 
-validAction(Action, State, Depth + 1) :-
-    state(State, Depth), action(Action),
-    holds(Variable, Value, State) : precondition(Action, Variable, Value).
-
 %validAction(Action, State, Depth + 1) :-
 %    state(State, Depth), action(Action),
-%    not goal(State), %Goal states are terminal, no further actions can be performed
 %    holds(Variable, Value, State) : precondition(Action, Variable, Value).
+
+validAction(Action, State, Depth + 1) :-
+    state(State, Depth), action(Action),
+    not goal(State), %Goal states are terminal, no further actions can be performed
+    holds(Variable, Value, State) : precondition(Action, Variable, Value).
 
 expanded(apply(Action, State), Depth) :- validAction(Action, State, Depth).
 

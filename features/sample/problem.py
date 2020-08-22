@@ -57,19 +57,19 @@ class Node:
 
     def store(self):
         info = {
-            'symbols': self._symbols.to_str(),
+            'symbols': self._symbols.to_pickle(),
             'id': self.id,
             'children': self.children,
             'depth': self.depth,
             'parent': self.parent,
-            'encoding': self._encoding.to_str()
+            'encoding': self._encoding.to_pickle()
         }
         return info
 
     @staticmethod
     def load_state(info):
         def load(symbols, id, children, depth, parent, encoding):
-            node = Node(SymbolSet.from_str(symbols), depth, parent, id=id, encoding=SymbolSet.from_str(encoding))
+            node = Node(SymbolSet.from_pickle(symbols), depth, parent, id=id, encoding=SymbolSet.from_pickle(encoding))
             node._children = children
             for child in node.children:
                 node._transitions.append(clingo.Function('transition', [node.id, child]))

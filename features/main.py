@@ -95,9 +95,11 @@ if __name__ == "__main__":
         goal_req=args.goal, complete=args.complete, optimal=True
     )
     if not args.sat: sample.store(str(out_path/'sample'))
-    grammar = Grammar(sample_v)
-    #if args.load:
-    #    grammar.load_progress()
+    del sample
+    if args.load == None:
+        grammar = Grammar(sample_v)
+    else:
+        grammar = Grammar.load(sample_v, str(Path(args.load)/'grammar'))
     features = Features(sample_v, grammar, str(out_path), distance=args.dist)
     if not args.sat:
         while (args.features != None and features.feature_count() < args.features) or \
