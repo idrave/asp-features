@@ -246,7 +246,7 @@ class Features:
     def feature_count(self):
         return self.total_features
 
-    def generate(self, max_cost=None, max_f=None, max_pre=50, feat_prune=50, batch=1):
+    def generate(self, max_cost=None, max_f=None, batch=1, batch_g=1):
         max_cost = self.cost+1 if max_cost is None else max_cost
         print('Features with max cost {}'.format(max_cost))
 
@@ -255,28 +255,30 @@ class Features:
             features.append(Nullary(self.sample))
 
         if self.concepts.cost < max_cost:
-            self.concepts.expand_grammar(max_cost, batch=batch)
+            self.concepts.expand_grammar(max_cost, batch=batch_g)
         conc = []
         for i in range(self.cost+1, max_cost+1):
             conc += self.concepts.get_cost(i)
         for i in range(0,len(conc),batch):
             features.append(ConceptFeat(self.sample, conc[i:i+batch]))
+        b_dist = int((batch // len(self.concepts.get_roles())) ** (1.0/3.0))
+        b_dist = b_dist if b_dist > 0 else 1
         if self._distance:
             for cost in range(self.cost+1, max_cost+1):
                 for i in range(1, cost-2):
                     for j in range(1, cost-1-i):
                         for k in range(1, cost-i-j):
-                            for conc1 in self.concepts.batch_cost(i, batch):
-                                for conc in self.concepts.batch_cost(j, batch):
-                                    for conc2 in self.concepts.batch_cost(k, batch):
+                            for conc1 in self.concepts.batch_cost(i, b_dist):
+                                for conc in self.concepts.batch_cost(j, b_dist):
+                                    for conc2 in self.concepts.batch_cost(k, b_dist):
                                         features.append(
                                             Distance(
                                                 self.sample, conc1,
-                                                self.concepts.roles, conc,
+                                                self.concepts.get_roles(), conc,
                                                 conc2, max_cost=max_cost))
         for i, feat in enumerate(features):
-            if (i+1)%10==0 or i == len(features)-1:
-                print('Features {}/{}'.format(i+1, len(features)))
+            if max_f != None and self.feature_count >= max_f: break
+            print('Features {}/{}'.format(i+1, len(features)))
             fs = feat()
             #logging.debug('Initial features: {}'.format(len(fs)))
             #logging.debug('Initial bool: {}'.format(count_symbols(symbols, 'bool', 1)))
@@ -284,6 +286,7 @@ class Features:
             for f in fs:
                 if f not in self._feat_set:
                     self.add_feature(f.to_feature(self.total_features))
+                if max_f != None and self.feature_count >= max_f: break
 
         print('Generated {} features'.format(self.total_features))
         self.cost = max_cost

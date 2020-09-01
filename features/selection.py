@@ -53,11 +53,11 @@ def parse_clingo(output):
     return result
 
 
-def solve_T_G_subprocess(sample: Sample, path):
+def solve_T_G_subprocess(sample: Sample, path, threads=1):
     sym = sample.get_sample() + sample.get_relevant()
     relevant_file = path+'/sample_relevant.lp'
     write_symbols(sym, relevant_file)
-    cmd = ['clingo', relevant_file, str(Path(path)/'features.lp'), Logic.t_g]
+    cmd = ['clingo', relevant_file, str(Path(path)/'features.lp'), Logic.t_g, '-t', str(threads)]
     parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
     start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -71,4 +71,6 @@ def solve_T_G_subprocess(sample: Sample, path):
     mem = parent_conn.recv()
     parent_conn.close()
     prof.join()
+    with open(path+'/clingo_stdout.txt','w') as fp:
+        fp.write(out)
     return parse_clingo(out), sec, mem

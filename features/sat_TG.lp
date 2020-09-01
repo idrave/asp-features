@@ -11,6 +11,12 @@
 
 %*
 #program sat.*%
+%selected(64).
+%selected(28).
+%selected(221).
+%selected(63).
+%selected(0).
+
 %A state is relevant if it is part of a relevant transition
 relevant(S) :- relevant(S, _).
 relevant(S) :- relevant(_, S).
@@ -36,6 +42,7 @@ d2(S1, S2, T1, T2) :-
 
 % Rule (3). Enforce soundness and completeness
 
+%d2(S1, S2, T1, T2) :- not -d2(S1, S2, T1, T2), relevant(S1, S2), transition(T1, T2), S1 != T1.
 1 {-d2(S1, S2, T1, T2) : transition(T1, T2)} :- S1 != T1, not d1(S1, T1), relevant(S1, S2), state(T1), transition(T1, _).
 
 % Rule (4). Differentiate goal from non-goals
@@ -46,4 +53,3 @@ d1(S, T) :- relevant(S), state(T), goal(T), S != T, not goal(S).
 % Find optimal model minimizing sum of feature costs
 #minimize {N, F : selected(F), cost(F, N)}.
 #show selected/1.
-%#show d1/2.

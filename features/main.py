@@ -34,15 +34,7 @@ def get_args():
     
     #Concept generation arguments
     conc_group = parser.add_argument_group('Concepts')
-    conc_group.add_argument('--exp',default=400, type=int, help='Max number of expressions in prunning set')
-    conc_group.add_argument('--conc',default=250, type=int, help='Max number of concepts in file')
-    group_compare = conc_group.add_mutually_exclusive_group(required = False)
-    group_compare.add_argument('--fast', action='store_const', dest='compare', help='Prunning with cardinality',
-        const=CompareConcept.FAST, default=CompareConcept.STANDARD)
-    group_compare.add_argument('--std', action='store_const', dest='compare', help='Standard sound prunning',
-        const=CompareConcept.STANDARD)
-    group_compare.add_argument('--mix', action='store_const', dest='compare', help='Cardinality + standard prunning',
-        const=CompareConcept.MIXED)
+    conc_group.add_argument('--conc',default=100, type=int, help='Concept batch size')
 
     #Feature generation arguments
     feat_group = parser.add_argument_group('Features')
@@ -50,11 +42,11 @@ def get_args():
     feat_group.add_argument('-f', '--features', default=None, type=int, help='Minimum features required')
     feat_group.add_argument('--dist', action='store_true', help='Option to generate distance features')
     feat_group.add_argument('--batch',action='store',default=1, type=int, help='Concept files used simultaneaously in feature generation.')
-    feat_group.add_argument('--atom',default=250, type=int, help='Max new features prunned together')
-    feat_group.add_argument('--comp',default=250, type=int, help='Max number of known features used for prunning simultaneously')
-    
+    feat_group.add_argument('--stop', action='store_true', help='Stop feature generation if desired number is reached')
+
     #Solver arguments
     parser.add_argument('--sat', action='store_true', help='Only apply sat')
+    parser.add_argument('-threads', type=int, default=1, help='Number of threads to use in solver')
 
     return parser.parse_args()
     
@@ -90,10 +82,13 @@ if __name__ == "__main__":
             depth=args.depth, states=args.states, transitions=args.transitions,
             goal_req=args.goal, complete=args.complete
         )
-    sample_v = sample.get_view(
-        depth=args.depth, states=args.states, transitions=args.transitions,
-        goal_req=args.goal, complete=args.complete, optimal=True
-    )
+    #sample_v = sample.get_view(
+    #    depth=args.depth, states=args.states, transitions=args.transitions,
+    #    goal_req=args.goal, complete=args.complete, optimal=True
+    #)
+
+    sample_v = SampleView(sample, min_t=args.transitions, min_depth=args.depth, optimal = True)
+    logging.debug('SampleView done')
     if not args.sat: sample.store(str(out_path/'sample'))
     del sample
     if args.load == None:
@@ -110,7 +105,9 @@ if __name__ == "__main__":
         while (args.features != None and features.feature_count() < args.features) or \
                 (args.cost != None and features.cost < args.cost):
             features.generate(
-                batch=args.batch
+                max_f=(args.features if args.stop else None),
+                batch=args.batch,
+                batch_g=args.conc,
             )
     grammar.store(str(out_path/'grammar'))
     features.store(str(out_path/'features'))
@@ -123,7 +120,7 @@ if __name__ == "__main__":
     
     #print('Grounding took {}s, min memory {} MB, max memory {} MB'.format(round(time_g, 3), round(min(mem_g)/1e6, 3), round(max(mem_g)/1e6, 3)))
     #logging.debug('Profiling samples: {}'.format(len(mem_s)))
-    solution, t, mem = solve_T_G_subprocess(sample_v, args.out)
+    solution, t, mem = solve_T_G_subprocess(sample_v, args.out, threads=args.threads)
     logging.debug('Profiling samples: {}'.format(len(mem)))
     logging.debug('Relevant: {}'.format(sample_v.get_relevant()))
     #print('Solving took {}s, min memory {} MB, max memory {} MB'.format(round(time_s, 3), round(min(mem_s)/1e6, 3), round(max(mem_s)/1e6, 3)))

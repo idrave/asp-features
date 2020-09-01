@@ -1,6 +1,7 @@
 
 import clingo
 import sys
+import math
 import logging
 import pathlib
 import re
@@ -461,12 +462,15 @@ class Grammar:
         else:
             if depth == 3:
                 variables.append(EqualRole(self.sample, self.get_roles()))
-            
+            b_conj = int(math.sqrt(batch))
+            b_crole = batch // len(self.get_roles())
+            b_conj = b_conj if b_conj > 0 else 1
+            b_crole = b_crole if b_crole > 0 else 1
             for i in range(1, (depth + 1)//2):
-                for conc1 in self.batch_cost(i, batch):
-                    for conc2 in self.batch_cost(depth - i - 1, batch):
+                for conc1 in self.batch_cost(i, b_conj):
+                    for conc2 in self.batch_cost(depth - i - 1, b_conj):
                         variables.append(Conjunction(self.sample, conc1, conc2))
-            for conc in self.batch_cost(depth - 2, batch):
+            for conc in self.batch_cost(depth - 2, b_crole):
                 variables.append(Uni(self.sample, conc, self.get_roles()))
                 variables.append(Exi(self.sample, conc, self.get_roles()))
             return variables

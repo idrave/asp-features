@@ -60,7 +60,6 @@ class Instance:
                         instance._optimal = node
         return instance
 
-    #TODO fix store/load
     def store(self):
         info = {
             'problem': self.problem.store(),
@@ -120,7 +119,7 @@ class Instance:
         self._depth = self.next_depth()  
         print('New States', self.count_states(depth=self.depth))
         if self.count_states(depth=self.depth) == 0:
-            print('COMPLETE')
+            #print('COMPLETE')
             self._complete = True 
              
     def count_states(self, depth=None):
@@ -165,7 +164,12 @@ class Instance:
 
     def get_initial_state(self):
         if self.depth == None or self.depth < 0: return None
-        return self._states[0]
+        assert len(self._states[0]) == 1
+        return self._states[0][0]
+
+    @property
+    def optimal_goal(self):
+        return self._optimal
 
     @property
     def transitions(self):
@@ -368,7 +372,7 @@ class Sample:
         assert(
             self.is_complete or 
             ((states == None or s_n >= states) and (transitions == None or t_n >= transitions)))
-        return SampleView(self, max_depth=depth, optimal=optimal)
+        return SampleView(self, min_depth=depth, optimal=optimal)
 
     def print_info(self):
         print(('Number of states: {}\nNumber of transitions: {}\n'
@@ -378,23 +382,84 @@ class Sample:
 
 class SampleView:
 
-    def __init__(self, sample: Sample, max_depth=None, optimal=False):
-        max_depth = max_depth if max_depth != None else sample.depth
+    def __init__(self, sample: Sample, min_t=None, min_depth=None, optimal=False):
+        logging.debug('Initializing SampleView, min_t {}, min_depth {}, optimal {}'.format(min_t, min_depth, optimal))
+        sample.expand_states(
+            depth=min_depth,
+            transitions=min_t,
+            goal_req=optimal
+        )
         inst = sample.get_instances()
-        sym = []
-        for i in inst:
-            sym += i.problem.const + i.problem.predicates
-            sym += i.encoding(max_depth=max_depth, optimal=optimal)
+        id_set = {}
+        encoded = {}
+        expanded = {}
+        q = []
+        self._symbols = SymbolSet([])
+        self._t_n = 0 # number of transitions
+        self._s_n = 0 # number of states
+        d = -1
+        
+        for n, i in enumerate(inst):
             if optimal:
-                sym += i.relevant
-                print(i.relevant)
-        self.symbols = SymbolSet(sym)
-        self._complete = sample.is_complete and sample.depth <= max_depth
-        if max_depth == None or sample.depth <= max_depth:
-            self.depth = sample.depth
-        else:
-            self.depth = max_depth
+                assert(i.is_goal)
+                st = i.optimal_goal
+                while True:
+                    self.symbols.add_symbols(st.encoding)
+                    self._s_n += 1
+                    encoded[st.id] = True
+                    print(st.id)
+                    st = i.get_state(st.parent)
+                    if st != None:
+                        self.symbols.add_symbols(st.transitions)
+                        self._t_n += len(st.transitions)
+                        expanded[st.id] = True
+                        for ch in st.children:
+                            if ch not in encoded:
+                                self.symbols.add_symbols(i.get_state(ch).encoding)
+                                self._s_n += 1
+                                encoded[ch] = True
+                    else:
+                        break
+                self.symbols.add_symbols(i.relevant)
+
+            self.symbols.add_symbols(i.problem.const + i.problem.predicates)
+            s0 = i.get_initial_state()
+            print('Initial state', s0.id)
+            if s0 != None:
+                q.append((n, s0))
+                assert s0.id in encoded or not optimal
+                id_set[s0.id] = True
+
+        while len(q) > 0 and (min_t == None or min_t >= self._t_n) \
+                and (min_depth == None or min_depth > d):
+            i, st = q.pop(0)
+            logging.debug(len(q))
+            #if st.depth-1 > d:
+            #    print('Depth {} done. St {} Tr {}'.format(st.depth-1, self._s_n, self._t_n))
+            d = max(d, st.depth-1)
+            if st.id not in expanded:
+                self.symbols.add_symbols(st.transitions)
+                self._t_n += len(st.transitions)
+                expanded[st.id] = True
+            new = st.children
+            for new_st in new:
+                if new_st not in id_set:
+                    new_st = inst[i].get_state(new_st)
+                    if new_st.id not in encoded:
+                        self.symbols.add_symbols(new_st.encoding)
+                        self._s_n += 1
+                        encoded[new_st.id] = True
+                    q.append((i, new_st))
+                    id_set[new_st.id] = True
+                    #logging.debug(new_st.id)
+        logging.debug('States {} Transitions {}'.format(self._s_n, self._t_n))
+        self._complete = len(q) == 0 and sample.is_complete
+        self.depth = d
         self.optimal = optimal
+
+    @property
+    def symbols(self):
+        return self._symbols
 
     @property
     def is_goal(self):
@@ -492,4 +557,5 @@ if __name__ == "__main__":
     if args.relevant:
         print(sample.get_relevant())
     sample.store(args.out)
+    write_symbols(sample.get_sample(), os.path.join(args.out, 'sample.lp'))
     print('Time on equality:', features.sample.problem.time_eq)
