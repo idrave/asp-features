@@ -49,7 +49,8 @@ def get_args():
     parser.add_argument('-threads', type=int, default=1, help='Number of threads to use in solver')
 
     return parser.parse_args()
-    
+
+import time
 
 if __name__ == "__main__":
     args = get_args()
@@ -73,9 +74,12 @@ if __name__ == "__main__":
     with open(str(out_path/'info.txt'), 'a') as fp:
         fp.write(str(sys.argv))
     if args.load != None:
+        st_sample = time.time()
         sample = Sample.load(str(Path(args.load)/'sample'))
     else:
+        st_sample = time.time()
         sample = Sample(instances=[Instance(Problem(pddl), numbered=(not args.symbol)) for pddl in args.pddl])
+        
     print(args.depth)
     if not args.sat:
         sample.expand_states(
@@ -89,6 +93,7 @@ if __name__ == "__main__":
 
     sample_v = SampleView(sample, min_t=args.transitions, min_depth=args.depth, optimal = True)
     logging.debug('SampleView done')
+    print('Time expanding sample', time.time()-st_sample)
     if not args.sat: sample.store(str(out_path/'sample'))
     del sample
     if args.load == None:
