@@ -206,8 +206,10 @@ class Distance:
                 assert(len(models) == 1)
                 possym += models[0]
                 ctl.reset(arguments=['-n 0'])
+            for r in self.roles:
+                symbols += r.symbols.get_all_atoms() 
             #print(possym)
-            ctl.load([Logic.featureFile, self.roles])
+            ctl.load([Logic.featureFile])
             ctl.addSymbols(self.sample.get_states())
             ctl.addSymbols(self.sample.get_transitions())
             ctl.addSymbols(self.sample.get_const())
@@ -277,7 +279,7 @@ class Features:
                                                 self.concepts.get_roles(), conc,
                                                 conc2, max_cost=max_cost))
         for i, feat in enumerate(features):
-            if max_f != None and self.feature_count >= max_f: break
+            if max_f != None and self.feature_count() >= max_f: break
             print('Features {}/{}'.format(i+1, len(features)))
             fs = feat()
             #logging.debug('Initial features: {}'.format(len(fs)))
@@ -286,7 +288,7 @@ class Features:
             for f in fs:
                 if f not in self._feat_set:
                     self.add_feature(f.to_feature(self.total_features))
-                if max_f != None and self.feature_count >= max_f: break
+                if max_f != None and self.feature_count() >= max_f: break
 
         print('Generated {} features'.format(self.total_features))
         self.cost = max_cost

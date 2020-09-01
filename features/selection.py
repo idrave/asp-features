@@ -1,4 +1,4 @@
-from features.sample.sample import Sample
+from features.sample.sample import SampleView, Sample
 from features.feat import Features
 import features.solver as solver
 from features.solver import SolverType, ClingoProfiling
@@ -53,8 +53,8 @@ def parse_clingo(output):
     return result
 
 
-def solve_T_G_subprocess(sample: Sample, path, threads=1):
-    sym = sample.get_sample() + sample.get_relevant()
+def solve_T_G_subprocess(sample: SampleView, path, threads=1):
+    sym = sample.get_states() + sample.get_transitions() + sample.symbols.get_atoms('goal', 1) + sample.get_relevant()
     relevant_file = path+'/sample_relevant.lp'
     write_symbols(sym, relevant_file)
     cmd = ['clingo', relevant_file, str(Path(path)/'features.lp'), Logic.t_g, '-t', str(threads)]

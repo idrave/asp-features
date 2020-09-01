@@ -31,7 +31,8 @@ def get_args():
     sample_group.add_argument('-t', dest='transitions', type=int, default=None, help='Minimum number of transitions required')
     sample_group.add_argument('--complete', action='store_true', help='Expand all state space (could be too big!)')
     sample_group.add_argument('--goal', action='store_true', help='Ensure there is at least one goal per instance')
-    
+    sample_group.add_argument('--loadsample', action='store_true', help='Load only sample')
+
     #Concept generation arguments
     conc_group = parser.add_argument_group('Concepts')
     conc_group.add_argument('--conc',default=100, type=int, help='Concept batch size')
@@ -96,11 +97,11 @@ if __name__ == "__main__":
     print('Time expanding sample', time.time()-st_sample)
     if not args.sat: sample.store(str(out_path/'sample'))
     del sample
-    if args.load == None:
+    if args.load == None or args.loadsample:
         grammar = Grammar(sample_v)
     else:
         grammar = Grammar.load(sample_v, str(Path(args.load)/'grammar'))
-    if args.load == None:
+    if args.load == None or args.loadsample:
         features = Features(sample_v, grammar, distance=args.dist)
     else:
         features = Features.load(sample_v, grammar, str(Path(args.load)/'features'))
