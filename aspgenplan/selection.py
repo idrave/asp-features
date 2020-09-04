@@ -1,9 +1,8 @@
-from features.sample.sample import SampleView, Sample
-from features.feat import Features
-import features.solver as solver
-from features.solver import SolverType, ClingoProfiling
-from features.logic import Logic
-from features.model_util import write_symbols
+from aspgenplan.sample import SampleView, Sample
+from aspgenplan.solver import SolverType, ClingoProfiling, create_solver
+from aspgenplan.utils import write_symbols
+from aspgenplan.features import Features
+from aspgenplan.logic import Logic
 import subprocess
 import psutil
 import time
@@ -15,7 +14,7 @@ import sys
 from pathlib import Path
 
 def solve_T_G(sample: Sample, features: Features):
-    with solver.create_solver(type_= SolverType.PROFILE) as ctl:
+    with create_solver(type_= SolverType.PROFILE) as ctl:
         ctl.load([Logic.t_g, features.features])
         ctl.addSymbols(sample.get_sample() + sample.get_relevant())
         ctl.ground([Logic.base])

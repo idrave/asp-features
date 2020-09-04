@@ -1,15 +1,14 @@
-from features.model_util import SymbolSet, write_symbols, eq_symbol, SymbolHash
-import features.logic
-from features.logic import Logic
-import features.solver as solver
-from features.solver import Solver
-import subprocess
-from pathlib import Path
-import clingo
+from aspgenplan.utils import SymbolSet, write_symbols, SymbolHash
+from aspgenplan.solver import Solver, create_solver
+from aspgenplan.logic import Logic
 from typing import List, Optional
+from pathlib import Path
+import aspgenplan.logic
+import subprocess
+import clingo
 
 def run_plasp(in_file):
-    return subprocess.run([features.logic.PLASP_PATH, 'translate', in_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
+    return subprocess.run([aspgenplan.logic.PLASP_PATH, 'translate', in_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
 
 def initial_state():
     return ('initial_state', [])
@@ -157,7 +156,7 @@ class Node:
     def make_state(self, id):
         assert(self.id == None)
         self._id = id
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(Logic.problem)
             ctl.load(Logic.sample_encoding)
             ctl.addSymbols(self.symbols.get_all_atoms())
@@ -170,7 +169,7 @@ class Node:
             
     def encode(self, prob):
         assert(self._encoding == None)
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(Logic.problem)
             ctl.load(Logic.sample_encoding)
             ctl.addSymbols(self.symbols.get_all_atoms() + prob.predicates + prob.const)
@@ -207,7 +206,7 @@ class Problem:
                     nulls.append(pred.string)
             return nulls
 
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             self._init_solver(ctl)
             ctl.ground([(Logic.base)])
             symbols = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(atoms=True))
@@ -238,7 +237,7 @@ class Problem:
         ctl.add('base', [], self.rules)
 
     def initial_state(self) -> Node:
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             self._init_solver(ctl)
             ctl.ground([Logic.base, initial_state(), evaluate()])
             ctl.solve()
@@ -252,7 +251,7 @@ class Problem:
     def get_successors(self, node: Node) -> List[Node]:
         #print('Generating successors of', node.id)
         write_symbols(node.symbols.get_all_atoms(), '/home/ivan/Documents/ai/features/res/samples/clear/hard_complete/node.lp')
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             self._init_solver(ctl)
             ctl.addSymbols(node.symbols.get_all_atoms())
             ctl.ground([Logic.base, successor()])

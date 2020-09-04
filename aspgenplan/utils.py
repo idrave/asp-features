@@ -1,10 +1,10 @@
+from aspgenplan.solver import create_solver
+from aspgenplan.logic import Logic
+from typing import List
 import clingo
-from features.logic import Logic
 import logging
 import os
 import pickle
-from typing import List
-import features.solver as solver
 import codecs
 
 def to_model_list(solve_handle):
@@ -212,7 +212,7 @@ class SymbolSet:
 
     @staticmethod
     def from_str(str_symbols: str):
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.add('base', [], str_symbols)
             ctl.ground([Logic.base])
             sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))[0]

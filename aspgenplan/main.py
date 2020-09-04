@@ -1,17 +1,15 @@
+
+from aspgenplan.selection import solve_T_G, solve_T_G_subprocess
+from aspgenplan.solver import SolverType, set_default_solver
+from aspgenplan.sample import Instance, Sample, SampleView, Problem
+from aspgenplan.utils import write_symbols, symbol_to_str
+from aspgenplan.grammar import Grammar
+from aspgenplan.features import Features
+from pathlib import Path
+import sys
 import argparse
 import multiprocessing
-from features.comparison import CompareConcept
 import logging
-from features.solver import SolverType
-import features.solver as solver
-from features.sample.sample import Instance, Sample, SampleView
-from features.sample.problem import Problem
-from features.grammar import Grammar
-from features.feat import Features
-from pathlib import Path
-from features.model_util import write_symbols, symbol_to_str
-import sys
-from features.selection import solve_T_G, solve_T_G_subprocess
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -59,7 +57,7 @@ if __name__ == "__main__":
         RuntimeError('At least one of arguments --cost and --features is required')
 
     multiprocessing.set_start_method('spawn')
-    solver.set_default(args.solver)
+    set_default_solver(args.solver)
     
     print(args.pddl, args.out)
     out_path = Path(args.out)

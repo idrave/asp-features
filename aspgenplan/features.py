@@ -1,25 +1,19 @@
-from features.knowledge import ConceptFile, number_symbols
-from features.comparison import Comparison
-import features.solver as solver
-from features.solver import SolverType
-import logging
-from features.model_util import write_symbols, count_symbols, get_symbols, SymbolSet, SymbolHash, symbol_to_str
-from features.logic import Logic
-from features.grammar import Grammar, Concept, ConceptObj
-from features.prune import Pruneable
-from features.comparison import CompareFeature
-from features.sample.sample import Sample, SampleFile
+from aspgenplan.solver import SolverType, create_solver
+from aspgenplan.utils import SymbolSet, SymbolHash, symbol_to_str
+from aspgenplan.sample import Sample
+from aspgenplan.logic import Logic
+from aspgenplan.grammar import Grammar, ConceptObj
 from typing import List, Union
 from pathlib import Path
+from argparse import ArgumentParser
+from abc import ABC, abstractmethod
+import logging
 import clingo
 import sys
-from argparse import ArgumentParser
-from pathlib import Path
 import os
 import json
-from abc import ABC, abstractmethod
 
-class Feature(Pruneable):
+class Feature:
     prune_file = str(Logic.logicPath/'prune.lp')
     processFeat = ('feature', [])
     comparePreFeature = ('compare_prefeature', [])
@@ -56,7 +50,7 @@ class PreFeature:
         self._calc_hash()
 
     def to_feature(self, id):
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(Logic.featureFile)
             ctl.addSymbols(self._symbols.get_all_atoms())
             ctl.ground([Logic.base, ('to_feature', [id])])
@@ -147,12 +141,12 @@ class FeatureObj(PreFeature):
         return load(**jsondict)
 
 class Nullary:
-    def __init__(self, sample: Union[Sample, SampleFile]):
+    def __init__(self, sample: Union[Sample]):
         self.sample = sample
 
     def __call__(self) -> List[clingo.Symbol]:
         logging.debug('Calling Nullary')
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.featureFile])
             ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Feature.primitiveFeature, Feature.processFeat])
@@ -160,7 +154,7 @@ class Nullary:
         return [PreFeature(SymbolSet(model)) for model in models]
 
 class ConceptFeat:
-    def __init__(self, sample: Union[Sample, SampleFile], concepts: List[ConceptObj]):
+    def __init__(self, sample: Union[Sample], concepts: List[ConceptObj]):
         self.sample = sample
         self.concepts = concepts
 
@@ -169,7 +163,7 @@ class ConceptFeat:
         sym = []
         for c in self.concepts:
             sym += c.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.featureFile])
             ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_states())
@@ -191,7 +185,7 @@ class Distance:
 
     def __call__(self) -> List[FeatureObj]:
         logging.debug('Calling Distance({})'.format(tuple(([c.id for c in co] for co in (self.conc1, self.conc, self.conc2)))))
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             possym = []
             symbols = []
             for i, cs in enumerate((self.conc1, self.conc, self.conc2)):
@@ -231,7 +225,7 @@ class Distance:
         return [PreFeature(SymbolSet(model)) for model in models]
 
 class Features:
-    def __init__(self, sample: Union[Sample, SampleFile], grammar, distance=False):
+    def __init__(self, sample: Union[Sample], grammar, distance=False):
         self.sample = sample
         self.concepts = grammar
         self.features = []

@@ -1,22 +1,16 @@
-import clingo
-import subprocess
-import os
-import features.solver as solver
-import features.logic
-from features.logic import Logic
-from features.model_util import SymbolSet, write_symbols
-from features.sample.problem import Problem, Node
-from features.sample.problem import time_eq
+from aspgenplan.solver import create_solver
+from aspgenplan.sample import Problem, Node, time_eq
+from aspgenplan.utils import SymbolSet, write_symbols
+from aspgenplan.logic import Logic
 from typing import List, Optional
-import argparse
 from pathlib import Path
+import argparse
 import logging
 import sys
 import json
 import time
-
-def run_plasp(in_file):
-    return subprocess.run([features.logic.PLASP_PATH, 'translate', in_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
+import clingo
+import os
 
 #TODO: conditional effects are not properly translated by plasp.
 
@@ -500,7 +494,7 @@ class SampleView:
 class SampleFile:
     def __init__(self, s_file):
         self.file = s_file
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(self.file)
             ctl.ground([Logic.base])
             sym = ctl.solve(solvekwargs=dict(yield_=True), symbolkwargs=dict(shown=True))
@@ -558,4 +552,5 @@ if __name__ == "__main__":
         print(sample.get_relevant())
     sample.store(args.out)
     write_symbols(sample.get_sample(), os.path.join(args.out, 'sample.lp'))
-    print('Time on equality:', features.sample.problem.time_eq)
+    global time_eq
+    print('Time on equality:', time_eq)

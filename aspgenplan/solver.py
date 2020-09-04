@@ -1,8 +1,8 @@
-import clingo
 from multiprocessing import Process, Pipe
 from enum import Enum, auto
 from typing import List, Union, Tuple, Optional
 from abc import ABC, abstractmethod
+import clingo
 import psutil
 import time
 
@@ -341,7 +341,7 @@ class SolverType(Enum):
 
 DEFAULT_SOLVER_TYPE = SolverType.SIMPLE
 
-def set_default(type_):
+def set_default_solver(type_):
     if isinstance(type_, SolverType):
         global DEFAULT_SOLVER_TYPE
         DEFAULT_SOLVER_TYPE = type_

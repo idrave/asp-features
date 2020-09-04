@@ -1,8 +1,6 @@
-from distutils.core import setup
+from setuptools import setup, find_packages
 
-setup(name='features',
+setup(name='aspgenplan',
       version='1.0',
-      packages=['features', 'features.sample'],
-      package_data={'features' : ['*.lp'],
-                  'features.sample' : ['*.lp']}
-     )
+      packages=find_packages(),
+      package_data={'' : ['*.lp']})

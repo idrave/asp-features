@@ -1,26 +1,19 @@
-
+from aspgenplan.utils import SymbolSet, SymbolHash, symbol_to_str
+from aspgenplan.solver import SolverType, create_solver, set_default_solver
+from aspgenplan.sample import Sample, Node
+from aspgenplan.logic import Logic
+from pathlib import Path
+from typing import List, Tuple, Union
 import clingo
 import sys
 import math
 import logging
-import pathlib
 import re
 import argparse
 import os
 import json
-from pathlib import Path
-from features.model_util import write_symbols, count_symbols, SymbolSet, SymbolHash, symbol_to_str
-from features.logic import Logic
-from features.knowledge import ConceptFile, splitSymbols
-import features.solver as solver
-from features.solver import SolverType
-from features.sample.sample import Sample, SampleFile
-from features.sample.problem import Node
-from comparison import CompareConcept
-from typing import List, Tuple, Union
-from features.prune import Pruneable
 
-class Concept(Pruneable):
+class Concept:
     cardinality = ('cardinality', [])
     compareExp = ('compare_exp', [])
     keepExp = ('keep_exp', [])
@@ -157,7 +150,7 @@ class Expression(StateSet):
         return super().belong(state=state, const=const)
 
     def as_concept(self, id):
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(Logic.grammarFile)
             ctl.addSymbols(self.symbols.get_all_atoms())
             ctl.ground([Logic.base, ('to_concept', [id])])
@@ -212,7 +205,7 @@ class PreRole(StateSet):
         return super().belong(state=state, const=const)
 
     def as_role(self, id):
-        with solver.create_solver() as ctl:
+        with create_solver() as ctl:
             ctl.load(Logic.grammarFile)
             ctl.addSymbols(self.symbols.get_all_atoms())
             ctl.ground([Logic.base, ('to_role', [id])])
@@ -251,12 +244,12 @@ class Role(PreRole):
         return Role(**info)
 
 class Primitive:
-    def __init__(self, sample: Union[Sample, SampleFile]):
+    def __init__(self, sample: Union[Sample]):
         self.sample = sample
 
     def __call__(self) -> List[Expression]:
         logging.debug('Calling Primitive')
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(self.sample.get_sample())
             ctl.ground([Logic.base, Concept.primitive(1), ('cardinality', []), ('show_exp', [])])
@@ -264,7 +257,7 @@ class Primitive:
         return [Expression(SymbolSet(model), 1) for model in models]
 
 class Negation:
-    def __init__(self, sample: Union[Sample, SampleFile], primitive: List[ConceptObj]):
+    def __init__(self, sample: Union[Sample], primitive: List[ConceptObj]):
         self.sample = sample
         self.primitive = primitive
     def __call__(self) -> List[Expression]:
@@ -272,7 +265,7 @@ class Negation:
         sym = []
         for c in self.primitive:
             sym += c.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
@@ -291,7 +284,7 @@ class EqualRole:
         sym = []
         for r in self.roles:
             sym += r.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
             ctl.addSymbols(sym)
@@ -312,7 +305,7 @@ class Conjunction:
             sym += c.symbols.get_all_atoms()
         for c in self.concept2:
             sym += c.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
@@ -334,7 +327,7 @@ class Uni:
             sym += c.symbols.get_all_atoms()
         for r in self.roles:
             sym += r.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
@@ -355,7 +348,7 @@ class Exi:
             sym += c.symbols.get_all_atoms()
         for r in self.roles:
             sym += r.symbols.get_all_atoms()
-        with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+        with create_solver(args=dict(arguments=['-n 0'])) as ctl:
             ctl.load([Logic.grammarFile])
             ctl.addSymbols(sym)
             ctl.addSymbols(self.sample.get_const() + self.sample.get_states())
@@ -365,7 +358,7 @@ class Exi:
         return [Expression(SymbolSet(model), cost) for model in models]
 
 def roles(sample):
-    with solver.create_solver(args=dict(arguments=['-n 0'])) as ctl:
+    with create_solver(args=dict(arguments=['-n 0'])) as ctl:
         ctl.load([Logic.grammarFile])
         ctl.addSymbols(sample.get_sample())
         ctl.ground([Logic.base, Logic.roles])
@@ -571,7 +564,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
 
-    solver.set_default(args.solver)
+    set_default_solver(args.solver)
     print(args.solver)
     sample = Sample.load(args.sample)
     if args.load != None:
