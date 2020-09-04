@@ -10,6 +10,8 @@ import time
 import multiprocessing
 import clingo
 import re
+import argparse
+import sys
 from pathlib import Path
 
 def solve_T_G(sample: Sample, features: Features):
@@ -28,7 +30,10 @@ def profile(pipe, pid):
     mem = []
     while True:
         if ps.is_running():
-            mem.append(ps.memory_info().rss)
+            try:
+                mem.append(ps.memory_info().rss)
+            except:
+                print('Process finished') #TODO
         if pipe.poll(timeout=SLEEP_TIME):
             pipe.recv()
             break
@@ -52,12 +57,8 @@ def parse_clingo(output):
 
     return result
 
-
-def solve_T_G_subprocess(sample: SampleView, path, threads=1):
-    sym = sample.get_states() + sample.get_transitions() + sample.symbols.get_atoms('goal', 1) + sample.get_relevant()
-    relevant_file = path+'/sample_relevant.lp'
-    write_symbols(sym, relevant_file)
-    cmd = ['clingo', relevant_file, str(Path(path)/'features.lp'), Logic.t_g, '-t', str(threads)]
+def solve_T_G_subprocess_dir(sample_file, features_file, threads=1):
+    cmd = ['clingo', sample_file, features_file, Logic.t_g, '-t', str(threads)]
     parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
     start = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -71,6 +72,34 @@ def solve_T_G_subprocess(sample: SampleView, path, threads=1):
     mem = parent_conn.recv()
     parent_conn.close()
     prof.join()
+    return out, sec, mem
+
+def solve_T_G_subprocess(sample: SampleView, path, threads=1):
+    sym = sample.get_states() + sample.get_transitions() + sample.symbols.get_atoms('goal', 1) + sample.get_relevant()
+    relevant_file = path+'/sample_relevant.lp'
+    features_file = str(Path(path)/'features.lp')
+    write_symbols(sym, relevant_file)
+    out, sec, mem = solve_T_G_subprocess_dir(relevant_file, features_file, threads=threads)
     with open(path+'/clingo_stdout.txt','w') as fp:
         fp.write(out)
     return parse_clingo(out), sec, mem
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('sample')
+    parser.add_argument('features')
+    parser.add_argument('output')
+    parser.add_argument('-t', '--threads')
+    args = parser.parse_args()
+    out, t, mem = solve_T_G_subprocess_dir(args.sample, args.features, threads=args.threads)
+    solution = parse_clingo(out)
+    message = \
+        'Profiling samples: {}\n'.format(len(mem)) + \
+        'Solving took {}s, start memory {} MB, max memory {} MB\n'.format(round(t, 3), round(min(mem)/1e6, 3), round(max(mem)/1e6, 3)) + \
+        'Solutions found: {}\n'.format(len(solution)) + \
+        'Optimal solution: {}. Cost: {}.\n'.format(*solution[-1] if len(solution) > 0 else (None, None))
+    print(message)
+    with open(args.output,'w') as fp:
+        fp.write('Call to: ' + str(sys.argv) + '\n')
+        fp.write(message+'\n')
+        fp.write(out)
